@@ -1,2 +1,6 @@
 /mnist
+/cifar10
+/filters
+/neurons
+/wandb
 test.py
