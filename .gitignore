@@ -3,4 +3,6 @@
 /filters
 /neurons
 /wandb
+/data
 test.py
+__pycache__

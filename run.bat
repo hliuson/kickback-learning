@@ -1,0 +1,1 @@
+python .\main.py --learning_rule softhebb --model_type mlp-1 --lr 0.001 --model_depth 3 --model_size 128 --norm layer --adaptive_lr false --R 2.5 --init xavier --dataset cifar10 --name "constant lr=0.001 R=2.5"
