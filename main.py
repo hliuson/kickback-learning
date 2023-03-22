@@ -50,13 +50,15 @@ def main(*args, **kwargs):
     parser.add_argument("--name", type=str, default="")
     parser.add_argument("--init", type=str, default="normal")
     parser.add_argument("--R", type=float, default=2.5)
+    parser.add_argument("--influence_type", type=str, default='simple')
+    parser.add_argument("--dot_uw", type=str2bool, default=False)
     
     args = parser.parse_args()
     
     epochs = args.epochs
     lr = args.lr
     learning_rule = args.learning_rule
-    assert learning_rule in ['end2end', 'softhebb', 'influencehebb', 'random']
+    assert learning_rule in ['end2end', 'softhebb', 'softmulthebb', 'influencehebb', 'random']
     
     dataset = args.dataset
     assert dataset in ['mnist', 'cifar10', 'cifar100', 'ms_coco']
@@ -97,10 +99,12 @@ def main(*args, **kwargs):
     assert args.lr_schedule in ['constant', 'exponential']
     schedule = args.lr_schedule
     
+    assert args.influence_type in ['simple', 'grad', "one"]
+    influence_type = args.influence_type
     
     
     if args.adaptive_lr:
-        if learning_rule not in ['softhebb', 'influencehebb']:
+        if learning_rule not in ['softhebb', 'softmulthebb', 'influencehebb']:
             raise Exception('adaptive learning rate only works with softhebb and influencehebb')
         if schedule != 'constant':
             raise Exception('adaptive learning rate only works with constant learning rate schedule')
@@ -141,7 +145,7 @@ def main(*args, **kwargs):
     
     model = None
     if model_type == 'mlp-1':
-        model = MLP1(mlp_in, mlp_out, width, depth, activation=act, norm=norm, init=init, init_radius=args.R)
+        model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=args.R)
     
     if model is None:
         raise Exception('Model is None')
@@ -158,50 +162,55 @@ def main(*args, **kwargs):
     
     wandb.watch(model)
     
+    print(model)
+    
     #add tags to wandb
 
         
     if epochs == -1:
         train_until_convergence = True
         epochs = 1000000
+    else:
+        train_until_convergence = False
 
     opt = HebbianOptimizer(model, lr=lr, learning_rule=learning_rule, supervised=supervised,
                            influencehebb_soft_y=influencehebb_soft_y, influencehebb_soft_z=influencehebb_soft_z, adaptive_lr=args.adaptive_lr, adaptive_lr_p=adaptive_lr_power,
-                           schedule=schedule)
+                           schedule=schedule, influence_type=influence_type, dot_uw=args.dot_uw)
     
 
     last_loss = float('inf')
-    for epoch in range(epochs):
-        for i, (x, y) in enumerate(train):
-            x, y = x.to(device), y.to(device)
-            y_hat = model(x)
-            loss = F.cross_entropy(y_hat, y)
-            if loss.isnan():
-                raise Exception('Loss is nan')
-            loss.backward()
-            opt.step()
-            wandb.log({"loss": loss.item()})
-        
-        test_loss = 0
-        test_acc = 0
-        
-        for i, (x, y) in enumerate(test):
-            x, y = x.to(device), y.to(device)
-            y_hat = model(x)
-            loss = F.cross_entropy(y_hat, y)
-            test_loss += loss.item()
+    if supervised:
+        for epoch in range(epochs):
+            for i, (x, y) in enumerate(train):
+                x, y = x.to(device), y.to(device)
+                y_hat = model(x)
+                loss = F.cross_entropy(y_hat, y)
+                if loss.isnan():
+                    raise Exception('Loss is nan')
+                loss.backward(retain_graph=True)
+                opt.step()
+                wandb.log({"loss": loss.item()})
             
-            acc = (y_hat.argmax(dim=1) == y).float().mean()
-            test_acc += acc.item()
-        
-        test_loss /= len(test)
-        test_acc /= len(test)
-        wandb.log({"test_loss": test_loss, "test_acc": test_acc})
-        
-        if train_until_convergence:
-            if last_loss < test_loss + 0.001:
-                break
-            last_loss = test_loss
+            test_loss = 0
+            test_acc = 0
+            
+            for i, (x, y) in enumerate(test):
+                x, y = x.to(device), y.to(device)
+                y_hat = model(x)
+                loss = F.cross_entropy(y_hat, y)
+                test_loss += loss.item()
+                
+                acc = (y_hat.argmax(dim=1) == y).float().mean()
+                test_acc += acc.item()
+            
+            test_loss /= len(test)
+            test_acc /= len(test)
+            wandb.log({"test_loss": test_loss, "test_acc": test_acc})
+            
+            if train_until_convergence:
+                if last_loss < test_loss + 0.001:
+                    break
+                last_loss = test_loss
     
 
 
