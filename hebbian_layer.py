@@ -84,7 +84,7 @@ class HebbianLinear(torch.nn.Module):
         u = self.u #b, o
         y = F.softmax(self.y, dim=1)
         
-        step += _hebb(x, u, y, self.weight, rate, adaptive, p, dot_uw=dot_uw)
+        step = _hebb(x, u, y, self.weight, rate, adaptive, p, dot_uw=dot_uw)
         self.weight += step
         wandb.log({'step size': torch.mean(torch.abs(step))}, commit=False)
         
