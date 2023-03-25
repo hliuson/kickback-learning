@@ -51,7 +51,7 @@ class HebbianOptimizer:
             for i, layer in enumerate(self.hebbianlayers):
                 layer.softhebb(rate, adaptive=self.adaptive_lr, p=self.p, dot_uw=self.dot_uw)
                 #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
-
+                
         if self.supervised:
             self.optim.step()
             self.optim.zero_grad()

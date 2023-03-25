@@ -52,6 +52,7 @@ def main(*args, **kwargs):
     parser.add_argument("--R", type=float, default=2.5)
     parser.add_argument("--influence_type", type=str, default='simple')
     parser.add_argument("--dot_uw", type=str2bool, default=False)
+    parser.add_argument("--pooling", type=str, default='max')
     
     args = parser.parse_args()
     
@@ -66,7 +67,7 @@ def main(*args, **kwargs):
     batch_size = args.batch_size
     
     model_type = args.model_type
-    assert model_type in ['mlp-1']
+    assert model_type in ['mlp-1', 'cnn-1']
     
     width = args.model_size
     depth = args.model_depth
@@ -92,6 +93,8 @@ def main(*args, **kwargs):
         norm = nn.LayerNorm
     if args.norm == 'batch':
         norm = nn.BatchNorm1d
+        if model_type == 'cnn-1':
+            norm = nn.BatchNorm2d
         
     assert args.init in ['normal', 'positive-uniform', 'xavier']
     init = args.init
@@ -102,6 +105,11 @@ def main(*args, **kwargs):
     assert args.influence_type in ['simple', 'grad', "one"]
     influence_type = args.influence_type
     
+    assert args.pooling in ['max', 'avg']
+    if args.pooling == 'max':
+        pool = nn.MaxPool2d
+    if args.pooling == 'avg':
+        pool = nn.AvgPool2d
     
     if args.adaptive_lr:
         if learning_rule not in ['softhebb', 'softmulthebb', 'influencehebb']:
@@ -126,12 +134,17 @@ def main(*args, **kwargs):
         
         mlp_in = 784
         mlp_out = 10
+        img_dim = 28
+        img_chan = 1
+        
     elif dataset == 'cifar10':
         train = torch.utils.data.DataLoader(datasets.CIFAR10('data', train=True, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
         test = torch.utils.data.DataLoader(datasets.CIFAR10('data', train=False, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
         
         mlp_in = 3072
         mlp_out = 10
+        img_dim = 32
+        img_chan = 3
     elif dataset == 'cifar100':
         train = torch.utils.data.DataLoader(datasets.CIFAR100('data', train=True, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
         test = torch.utils.data.DataLoader(datasets.CIFAR100('data', train=False, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
@@ -146,6 +159,8 @@ def main(*args, **kwargs):
     model = None
     if model_type == 'mlp-1':
         model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=args.R)
+    if model_type == 'cnn-1':
+        model = CNN1(img_dim, img_chan, width, mlp_out, depth, activation=act, normlayer=norm, init=init, init_radius=args.R, poollayer=pool)
     
     if model is None:
         raise Exception('Model is None')
