@@ -29,6 +29,8 @@ class MLP1(torch.nn.Module):
 
             if norm:
                 self.torso.add_module(f'layernorm_{i}', norm)
+            if i == num_layers-1:
+                self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
             self.torso.add_module(f'layer_{i}', layer)
             
             self.layers += [layer]
@@ -82,6 +84,7 @@ class CNN1(torch.nn.Module):
 
         head = HebbianLinear(curr_dim*curr_dim*curr_chan, out_dim, init=init, init_radius=init_radius, act=nn.Softmax(dim=1))
         self.torso.add_module('flatten', nn.Flatten())
+        self.torso.add_module('dropout', nn.Dropout(0.5))
         self.torso.add_module('head', head)
         
         self.layers += [head]

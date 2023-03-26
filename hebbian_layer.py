@@ -79,26 +79,26 @@ class HebbianLinear(torch.nn.Module):
         self.y = self.act(self.u)
         return self.y
     
-    def softhebb(self, rate, adaptive=False, p=0.5, dot_uw=False):
+    def softhebb(self, rate, adaptive=False, p=0.5, dot_uw=False, temp=1):
         x = self.x
         u = self.u #b, o
-        y = F.softmax(self.y, dim=1)
+        y = F.softmax(self.y / temp, dim=1)
         
         step = _hebb(x, u, y, self.weight, rate, adaptive, p, dot_uw=dot_uw)
         self.weight += step
         
         
-    def influencehebb(self, rate, softz, softy, adaptive=False, p=0.5, influence_type='simple', dot_uw=False):
+    def influencehebb(self, rate, softz, softy, adaptive=False, p=0.5, influence_type='simple', dot_uw=False, temp=1):
         x = self.x
         u = self.u #b, o
         y = self.y
         if softy:
-            y = F.softmax(y, dim=1)
+            y = F.softmax(y / temp, dim=1)
         
         
         z = self.next.u #or self.next.y?
         if softz:
-            z = F.softmax(z, dim=1)
+            z = F.softmax(z / temp, dim=1)
 
         #influence = torch.matmul(z, self.next.weight) #shape (b, o)
         #influence = influence.view(-1, influence.shape[1], 1) #shape (b, o, 1)
@@ -164,10 +164,10 @@ class HebbianConv2d(torch.nn.Module):
         self.y = self.act(self.u)
         return self.y
             
-    def softhebb(self, rate, adaptive=False, p=0.5, dot_uw=False):
+    def softhebb(self, rate, adaptive=False, p=0.5, dot_uw=False, temp=1):
         x = F.unfold(self.x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding, dilation=self.dilation)
-        u = F.unfold(self.y, kernel_size=1, stride=1, padding=0)
-        y = F.softmax(u, dim=1) #softmax over output neurons per patch / batch
+        u = F.unfold(self.u, kernel_size=1, stride=1, padding=0)
+        y = F.softmax(u / temp, dim=1) #softmax over output neurons per patch / batch
         
         y = y.view(-1, self.out_channels)
         u = u.view(-1, self.out_channels)
@@ -177,12 +177,12 @@ class HebbianConv2d(torch.nn.Module):
         step = _hebb(x, u, y, filter, rate, adaptive, p).view(self.filter.shape)
         self.filter += step
         
-    def influencehebb(self, rate, softz, softy, adaptive=False, p=0.5, influence_type='simple', dot_uw=False):
+    def influencehebb(self, rate, softz, softy, adaptive=False, p=0.5, influence_type='simple', dot_uw=False, temp=1):
         x = F.unfold(self.x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding, dilation=self.dilation).view(-1, self.in_channels*self.kernel_size*self.kernel_size)
-        u = F.unfold(self.y, kernel_size=1, stride=1, padding=0).view(-1, self.out_channels)
+        u = F.unfold(self.u, kernel_size=1, stride=1, padding=0).view(-1, self.out_channels)
         y = u
         if softy:
-            y = F.softmax(y, dim=1)
+            y = F.softmax(y / temp, dim=1)
         
         y = y.view(-1, self.out_channels)
         u = u.view(-1, self.out_channels)
@@ -191,7 +191,7 @@ class HebbianConv2d(torch.nn.Module):
         
         z = self.next.u
         if softz:
-            z = F.softmax(z, dim=1) #softmax over output neurons
+            z = F.softmax(z / temp, dim=1) #softmax over output neurons
         
 
         #influence = torch.matmul(z, self.next.weight) #shape (b, o)

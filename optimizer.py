@@ -4,7 +4,7 @@ import wandb
 class HebbianOptimizer:
     def __init__(self, model, lr=0.001, learning_rule='softhebb', supervised=True, influencehebb_soft_y=True,
                  influencehebb_soft_z=True, adaptive_lr=False, adaptive_lr_p=1, schedule=None, influence_type='simple',
-                 dot_uw=False):
+                 dot_uw=False, temp=1):
         self.model = model
         self.lr = lr
         self.hebbianlayers = model.layers
@@ -44,12 +44,13 @@ class HebbianOptimizer:
         self.p = adaptive_lr_p
         self.influence_type = influence_type
         self.dot_uw = dot_uw
+        self.temp = temp
             
     
     def softhebb(self, rate=0.001):
         with torch.no_grad():
             for i, layer in enumerate(self.hebbianlayers):
-                layer.softhebb(rate, adaptive=self.adaptive_lr, p=self.p, dot_uw=self.dot_uw)
+                layer.softhebb(rate, adaptive=self.adaptive_lr, p=self.p, dot_uw=self.dot_uw, temp=self.temp)
                 #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
                 
         if self.supervised:
@@ -61,7 +62,7 @@ class HebbianOptimizer:
             for i, layer in enumerate(self.hebbianlayers):
                 layer.influencehebb(rate, softz=self.influencehebb_soft_z, softy=self.influencehebb_soft_y,
                                     adaptive=self.adaptive_lr, p=self.p, influence_type=self.influence_type,
-                                    dot_uw=self.dot_uw)
+                                    dot_uw=self.dot_uw, temp=self.temp)
                 #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
         
         

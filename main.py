@@ -16,6 +16,7 @@ from torchvision import transforms, utils, datasets
 from optimizer import *
 from hebbian_layer import *
 from models import *
+from utils import *
 
                
 def str2bool(v):
@@ -53,6 +54,7 @@ def main(*args, **kwargs):
     parser.add_argument("--influence_type", type=str, default='simple')
     parser.add_argument("--dot_uw", type=str2bool, default=False)
     parser.add_argument("--pooling", type=str, default='max')
+    parser.add_argument("--temp", type=float, default=1.0)
     
     args = parser.parse_args()
     
@@ -80,12 +82,14 @@ def main(*args, **kwargs):
     influencehebb_soft_y = args.influencehebb_soft_y
     influencehebb_soft_z = args.influencehebb_soft_z
     
-    assert args.activation in ['relu', 'mish']
+    assert args.activation in ['relu', 'mish', 'triangle']
     act = None
     if args.activation == 'relu':
         act = nn.ReLU
     elif args.activation == 'mish':
         act = nn.Mish
+    elif args.activation == 'triangle':
+        act = Triangle
         
     assert args.norm in [None, 'layer', 'batch']
     norm = None
@@ -190,7 +194,7 @@ def main(*args, **kwargs):
 
     opt = HebbianOptimizer(model, lr=lr, learning_rule=learning_rule, supervised=supervised,
                            influencehebb_soft_y=influencehebb_soft_y, influencehebb_soft_z=influencehebb_soft_z, adaptive_lr=args.adaptive_lr, adaptive_lr_p=adaptive_lr_power,
-                           schedule=schedule, influence_type=influence_type, dot_uw=args.dot_uw)
+                           schedule=schedule, influence_type=influence_type, dot_uw=args.dot_uw, temp=args.temp)
     
 
     last_loss = float('inf')
