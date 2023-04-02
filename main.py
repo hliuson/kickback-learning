@@ -39,7 +39,7 @@ def main(*args, **kwargs):
     parser.add_argument('--model_type', type=str, default='mlp-1')
     parser.add_argument('--model_size', type=int, default=128)
     parser.add_argument('--model_depth', type=int, default=5)
-    parser.add_argument('--supervised', type=int, default=True) #if false, train unsupervised and then fit linear probe
+    parser.add_argument('--supervised', type=str2bool, default=True) #if false, train unsupervised and then fit linear probe
     parser.add_argument('--task', type=str, default='classification') #if dataset is ms coco, then we can do: a number of different tasks
     parser.add_argument("--influencehebb_soft_y", type=str2bool, default=True) #if true, use softmaxed y for influence hebbian learning rule
     parser.add_argument("--influencehebb_soft_z", type=str2bool, default=True) 
@@ -169,6 +169,10 @@ def main(*args, **kwargs):
     if model is None:
         raise Exception('Model is None')
     
+    if epochs == -1:
+        assert supervised # train-til-convergence only works with supervised learning
+        
+    
     model = model.to(device)  
     
     tags = [dataset, model_type, learning_rule, f"width-{width}", f"depth-{depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{supervised}"]
@@ -198,21 +202,22 @@ def main(*args, **kwargs):
     
 
     last_loss = float('inf')
-    if supervised:
-        for epoch in range(epochs):
-            for i, (x, y) in enumerate(train):
-                x, y = x.to(device), y.to(device)
-                y_hat = model(x)
+    for epoch in range(epochs):
+        print(f"Epoch {epoch}")
+        for i, (x, y) in enumerate(train):
+            x, y = x.to(device), y.to(device)
+            y_hat = model(x)
+            if supervised:
                 loss = F.cross_entropy(y_hat, y)
                 if loss.isnan():
                     raise Exception('Loss is nan')
                 loss.backward(retain_graph=True)
-                opt.step()
                 wandb.log({"loss": loss.item()})
-            
-            test_loss = 0
-            test_acc = 0
-            
+            opt.step()
+        
+        test_loss = 0
+        test_acc = 0
+        if supervised:
             for i, (x, y) in enumerate(test):
                 x, y = x.to(device), y.to(device)
                 y_hat = model(x)
@@ -225,12 +230,41 @@ def main(*args, **kwargs):
             test_loss /= len(test)
             test_acc /= len(test)
             wandb.log({"test_loss": test_loss, "test_acc": test_acc})
+        
+        if train_until_convergence:
+            if last_loss < test_loss + 0.001:
+                break
+            last_loss = test_loss
             
-            if train_until_convergence:
-                if last_loss < test_loss + 0.001:
-                    break
-                last_loss = test_loss
-    
+    if not supervised:
+        print('Completed training, now probing')
+        model.head.init_params("xavier", 1)
+        opt = torch.optim.SGD(model.head.parameters(), lr=lr)
+        for epoch in range(epochs):
+            for i, (x, y) in enumerate(train):
+                x, y = x.to(device), y.to(device)
+                y_hat = model(x)
+                loss = F.cross_entropy(y_hat, y)
+                if loss.isnan():
+                    raise Exception('Loss is nan')
+                loss.backward(retain_graph=True)
+                opt.step()
+                wandb.log({"probe_loss": loss.item()})
+            
+            test_loss = 0
+            test_acc = 0
+            for i, (x, y) in enumerate(test):
+                x, y = x.to(device), y.to(device)
+                y_hat = model(x)
+                loss = F.cross_entropy(y_hat, y)
+                test_loss += loss.item()
+                
+                acc = (y_hat.argmax(dim=1) == y).float().mean()
+                test_acc += acc.item()
+            
+            test_loss /= len(test)
+            test_acc /= len(test)
+            wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
 
 
 if __name__ == '__main__':

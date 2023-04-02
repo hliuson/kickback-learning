@@ -43,25 +43,12 @@ class HebbianLinear(torch.nn.Module):
         device = os.environ['KICKBACK_DEVICE']
         self.weight = torch.Tensor(out_dim, in_dim).to(device)
         self.bias = torch.Tensor(out_dim).to(device)
+        self.in_dim = in_dim
+        self.out_dim = out_dim
         
         R = init_radius
         
-        if init == 'normal':
-            N = in_dim
-            std = ((torch.pi /(2*N)) ** 0.5) * R
-            self.weight = torch.nn.init.normal_(self.weight, std=std)
-            self.bias = torch.nn.init.zeros_(self.bias)
-        
-            
-        if init == 'positive-uniform':
-            N = in_dim
-            range = ((1 / N) ** 0.5) * R * 2
-            self.weight = torch.nn.init.uniform_(self.weight, a=0, b=range)
-            self.bias = torch.nn.init.zeros_(self.bias)
-            
-        if init == 'xavier':
-            self.weight = torch.nn.init.xavier_normal_(self.weight, gain=R)
-            self.bias = torch.nn.init.zeros_(self.bias)
+        self.init_params(init, R)
             
         self.next = None
         
@@ -72,6 +59,24 @@ class HebbianLinear(torch.nn.Module):
         self.act = act
         if act is None:
             self.act = torch.nn.Identity()
+
+    def init_params(self, init="xavier", init_radius="1"):
+        R = init_radius
+        N = self.in_dim
+        if init == 'normal':
+            std = ((torch.pi /(2*N)) ** 0.5) * R
+            self.weight = torch.nn.init.normal_(self.weight, std=std)
+            self.bias = torch.nn.init.zeros_(self.bias)
+        
+            
+        if init == 'positive-uniform':
+            range = ((1 / N) ** 0.5) * R * 2
+            self.weight = torch.nn.init.uniform_(self.weight, a=0, b=range)
+            self.bias = torch.nn.init.zeros_(self.bias)
+            
+        if init == 'xavier':
+            self.weight = torch.nn.init.xavier_normal_(self.weight, gain=R)
+            self.bias = torch.nn.init.zeros_(self.bias)
         
     def forward(self, x):
         self.x = x
@@ -117,6 +122,13 @@ class HebbianLinear(torch.nn.Module):
         step = _hebb(x, u, y, self.weight, rate, adaptive, p, influence, dot_uw=dot_uw)
         self.weight += step
         
+    def clear_grad(self):
+        self.weight.grad = None
+        self.bias.grad = None
+        
+        self.x = None
+        self.y = None
+        self.z = None
         
         
        
@@ -135,17 +147,22 @@ class HebbianConv2d(torch.nn.Module):
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         
+        self.init_params(init, init_radius)
+
+        self.act = act
+        if act is None:
+            self.act = torch.nn.Identity()
+
+    def init_params(self, init="xavier", init_radius="1"):
         R = init_radius
-        
+        N = self.in_channels
         if init == 'normal':
-            N = in_channels
             std = ((torch.pi /(2*N)) ** 0.5) * R
             self.filter = torch.nn.init.normal_(self.filter, std=std)
             self.bias = torch.nn.init.zeros_(self.bias)
         
             
         if init == 'positive-uniform':
-            N = in_channels
             range = ((1 / N) ** 0.5) * R * 2
             self.filter = torch.nn.init.uniform_(self.filter, a=0, b=range)
             self.bias = torch.nn.init.zeros_(self.bias)
@@ -154,9 +171,6 @@ class HebbianConv2d(torch.nn.Module):
             self.filter = torch.nn.init.xavier_normal_(self.filter, gain=R)
             self.bias = torch.nn.init.zeros_(self.bias)
 
-        self.act = act
-        if act is None:
-            self.act = torch.nn.Identity()
         
     def forward(self, x):
         self.x = x
@@ -210,6 +224,14 @@ class HebbianConv2d(torch.nn.Module):
         filter = self.filter.view(self.out_channels, -1)
         step = _hebb(x, u, y, filter, rate, adaptive, p, influence, dot_uw=dot_uw).view(self.filter.shape)
         self.filter += step
+        
+    def clear_grad(self):
+        self.filter.grad = None
+        self.bias.grad = None
+        
+        self.x = None
+        self.y = None
+        self.z = None
         
         
   

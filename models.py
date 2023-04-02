@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 class MLP1(torch.nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim, num_layers, activation=nn.ReLU, normlayer=None, init=None, init_radius=None) -> None:
+    def __init__(self, in_dim, out_dim, hidden_dim, num_layers, activation=nn.ReLU, normlayer=None, init=None, init_radius=None, supervised=True) -> None:
         super().__init__()
         self.torso = torch.nn.Sequential()
         self.layers = []
@@ -22,6 +22,7 @@ class MLP1(torch.nn.Module):
                 if normlayer:
                     norm = normlayer(hidden_dim)
                 layer = HebbianLinear(hidden_dim, out_dim, init=init, init_radius=init_radius, act=nn.Softmax(dim=1))
+                self.head = layer
             else:
                 if normlayer:
                     norm = normlayer(hidden_dim)
@@ -29,9 +30,11 @@ class MLP1(torch.nn.Module):
 
             if norm:
                 self.torso.add_module(f'layernorm_{i}', norm)
-            if i == num_layers-1:
-                self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
+            #if i == num_layers-1:
+                #self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
             self.torso.add_module(f'layer_{i}', layer)
+            
+            
             
             self.layers += [layer]
             
@@ -84,10 +87,12 @@ class CNN1(torch.nn.Module):
 
         head = HebbianLinear(curr_dim*curr_dim*curr_chan, out_dim, init=init, init_radius=init_radius, act=nn.Softmax(dim=1))
         self.torso.add_module('flatten', nn.Flatten())
-        self.torso.add_module('dropout', nn.Dropout(0.5))
+        #self.torso.add_module('dropout', nn.Dropout(0.5))
         self.torso.add_module('head', head)
         
         self.layers += [head]
+        
+        self.head = head
         
         
         for i, layer in enumerate(self.layers):

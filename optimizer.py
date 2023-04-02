@@ -8,7 +8,7 @@ class HebbianOptimizer:
         self.model = model
         self.lr = lr
         self.hebbianlayers = model.layers
-        self.head = self.hebbianlayers[-1]
+        self.head = model.head
         
         if learning_rule == 'softhebb':
             self.learning_rule = self.softhebb
@@ -55,8 +55,8 @@ class HebbianOptimizer:
                 
         if self.supervised:
             self.optim.step()
-            self.optim.zero_grad()
-        
+        self.clear_grad()
+
     def influencehebb(self, rate=0.001):
         with torch.no_grad():
             for i, layer in enumerate(self.hebbianlayers):
@@ -68,10 +68,10 @@ class HebbianOptimizer:
         
         if self.supervised:
             self.optim.step()
-            self.optim.zero_grad()
         else:
             with torch.no_grad():
-                self.head.softhebb(rate, adaptive_lr=self.adaptive_lr, p=self.p)
+                self.head.softhebb(rate, adaptive=self.adaptive_lr, p=self.p)
+        self.clear_grad()
     
     def random(self, rate=0.001):
         self.optim.step()
@@ -84,3 +84,8 @@ class HebbianOptimizer:
     def step(self):
         self.learning_rule(self.lr)
     
+    def clear_grad(self):
+        if self.supervised:
+            self.optim.zero_grad()
+        for layer in self.hebbianlayers:
+            layer.clear_grad()
