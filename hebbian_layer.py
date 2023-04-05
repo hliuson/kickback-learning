@@ -180,13 +180,16 @@ class HebbianConv2d(torch.nn.Module):
             
     def softhebb(self, rate, adaptive=False, p=0.5, dot_uw=False, temp=1):
         x = F.unfold(self.x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding, dilation=self.dilation)
-        u = F.unfold(self.u, kernel_size=1, stride=1, padding=0)
-        y = F.softmax(u / temp, dim=1) #softmax over output neurons per patch / batch
+        u = self.u
         
-        y = y.view(-1, self.out_channels)
-        u = u.view(-1, self.out_channels)
-        x = x.view(-1, self.in_channels*self.kernel_size*self.kernel_size)
+         #!!! VERY IMPORTANT. Spatial dimensions must be LEFT of channel dimension before flattening.
+        u = u.permute(0, 3, 2, 1) #permute to (b, o, h, w)
+        u = u.reshape(-1, self.out_channels)
+        y = F.softmax(u / temp, dim=1) #softmax over output channels
         
+        x = x.permute(0, 2, 1) #permute to (b, h*w, i*k*k)
+        x = x.reshape(-1, self.in_channels*self.kernel_size*self.kernel_size) #reshape to (b*h*w, i*k*k)
+                        
         filter = self.filter.view(self.out_channels, -1)
         step = _hebb(x, u, y, filter, rate, adaptive, p).view(self.filter.shape)
         self.filter += step
