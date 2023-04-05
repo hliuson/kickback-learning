@@ -69,7 +69,6 @@ def main(*args, **kwargs):
     batch_size = args.batch_size
     
     model_type = args.model_type
-    assert model_type in ['mlp-1', 'cnn-1']
     
     width = args.model_size
     depth = args.model_depth
@@ -165,6 +164,8 @@ def main(*args, **kwargs):
         model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=args.R)
     if model_type == 'cnn-1':
         model = CNN1(img_dim, img_chan, width, mlp_out, depth, activation=act, normlayer=norm, init=init, init_radius=args.R, poollayer=pool)
+    if model_type == 'skip-mlp':
+        model = SkipMLP(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=args.R)
     
     if model is None:
         raise Exception('Model is None')
