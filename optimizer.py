@@ -1,6 +1,6 @@
 import torch
 import wandb
-
+from hebbian_layer import *
 class HebbianOptimizer:
     def __init__(self, model, lr=0.001, learning_rule='softhebb', supervised=True, influencehebb_soft_y=True,
                  influencehebb_soft_z=True, adaptive_lr=False, adaptive_lr_p=1, schedule=None, influence_type='simple',
@@ -21,8 +21,17 @@ class HebbianOptimizer:
         elif learning_rule == 'influencehebb':
             self.learning_rule = self.influencehebb
             self.hebbianlayers = self.hebbianlayers[:-1]
-            self.influencehebb_soft_y = influencehebb_soft_y
-            self.influencehebb_soft_z = influencehebb_soft_z
+            
+            self.args = InfluenceArgs(
+                rate = lr,
+                adaptive=adaptive_lr,
+                p=adaptive_lr_p,
+                dot_uw=dot_uw,
+                softy=influencehebb_soft_y,
+                softz=influencehebb_soft_z,
+                influence_type=influence_type,
+            )
+            
         elif learning_rule == 'random':
             self.learning_rule = self.random
             if not supervised:
@@ -45,6 +54,7 @@ class HebbianOptimizer:
         self.influence_type = influence_type
         self.dot_uw = dot_uw
         self.temp = temp
+        
             
     
     def softhebb(self, rate=0.001):
@@ -60,11 +70,8 @@ class HebbianOptimizer:
     def influencehebb(self, rate=0.001):
         with torch.no_grad():
             for i, layer in enumerate(self.hebbianlayers):
-                layer.influencehebb(rate, softz=self.influencehebb_soft_z, softy=self.influencehebb_soft_y,
-                                    adaptive=self.adaptive_lr, p=self.p, influence_type=self.influence_type,
-                                    dot_uw=self.dot_uw, temp=self.temp)
+                layer.influencehebb(self.args)
                 #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
-        
         
         if self.supervised:
             self.optim.step()

@@ -182,7 +182,7 @@ def main(*args, **kwargs):
     if args.name != "":
         postfix = f" | {args.name}"
     
-    wandb.init(project="influencehebb", config=args, name=f"{dataset} {model_type} {learning_rule}{postfix}", tags=tags)
+    wandb.init(project="influencehebb", config=args, name=f"{dataset} {model_type} {learning_rule} {depth}x{width}{postfix}", tags=tags)
     
     wandb.watch(model)
     

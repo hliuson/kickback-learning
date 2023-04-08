@@ -47,9 +47,6 @@ class MLP1(torch.nn.Module):
         x = self.torso(x)
         return x
 
-import torch
-import torch.nn as nn
-
 class SkipMLP(torch.nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim, num_layers, activation=nn.ReLU, normlayer=None, init=None, init_radius=None, supervised=True) -> None:
         super().__init__()
@@ -79,47 +76,20 @@ class SkipMLP(torch.nn.Module):
             if norm:
                 self.torso.add_module(f'layernorm_{i}', norm)
             self.torso.add_module(f'skip_block_{i}', block)
-            self.layers += [block.linear()]
+            self.layers += [block]
 
-        for i, layer in enumerate(self.layers):
-            if i < len(self.layers) - 1:
-                layer.next = self.layers[i+1]
+        #connect skip_block_i to skip_block_i+1
+        for i in range(num_layers-1):
+            cur = self.torso.__getattr__('skip_block_{n}'.format(n=i))
+            next = self.torso.__getattr__('skip_block_{n}'.format(n=i+1))
+            assert isinstance(cur, SkipBlock)
+            assert isinstance(next, SkipBlock)
+            cur.next = next
+            
 
     def forward(self, x):
         x = self.torso(x)
         return x
-class SkipBlock(torch.nn.Module):
-    def __init__(self, in_dim, out_dim, init=None, init_radius=None, act=nn.ReLU(), skip=True):
-        super().__init__()
-
-        self.main_path = nn.Sequential(
-            HebbianLinear(in_dim, out_dim, init=init, init_radius=init_radius, act=act)
-        )
-        
-        self.skip = skip
-
-        self.in_dim = in_dim
-        self.out_dim = out_dim
-
-    def forward(self, x):
-        y = self.main_path(x)
-        
-        if not self.skip:
-            return y
-        
-        if self.in_dim > self.out_dim:
-            z = x[:, :self.out_dim]
-        
-        if self.in_dim < self.out_dim:
-            z = torch.cat((x, torch.zeros((x.shape[0], self.in_dim - self.out_dim), device=x.device)), dim=1)
-            
-        if self.in_dim == self.out_dim:
-            z = x
-            
-        return y + z
-
-    def linear(self):
-        return self.main_path[0]
 
 
 class CNN1(torch.nn.Module):
