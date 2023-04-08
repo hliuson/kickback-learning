@@ -29,35 +29,7 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def main(*args, **kwargs):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=-1)
-    parser.add_argument('--lr', type=float, default=0.01)
-    parser.add_argument('--learning_rule', type=str, default=None) #end-to-end backprop, softhebb, influencehebb, random
-    parser.add_argument('--dataset', type=str, default='mnist') #mnist, cifar10, cifar100, ms_coco
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--model_type', type=str, default='mlp-1')
-    parser.add_argument('--model_size', type=int, default=128)
-    parser.add_argument('--model_depth', type=int, default=5)
-    parser.add_argument('--supervised', type=str2bool, default=True) #if false, train unsupervised and then fit linear probe
-    parser.add_argument('--task', type=str, default='classification') #if dataset is ms coco, then we can do: a number of different tasks
-    parser.add_argument("--influencehebb_soft_y", type=str2bool, default=True) #if true, use softmaxed y for influence hebbian learning rule
-    parser.add_argument("--influencehebb_soft_z", type=str2bool, default=True) 
-    parser.add_argument("--activation", type=str, default='relu') #relu, mish, triangle
-    parser.add_argument("--norm", type=str, default=None) #layer norm, batch norm
-    parser.add_argument("--adaptive_lr", type=str2bool, default=False) #if true, use adaptive learning rate
-    parser.add_argument("--adaptive_lr_power", type=float, default=0.5) #if true, use adaptive learning rate")
-    parser.add_argument("--lr_schedule", type=str, default='constant')
-    parser.add_argument("--name", type=str, default="")
-    parser.add_argument("--init", type=str, default="normal")
-    parser.add_argument("--R", type=float, default=2.5)
-    parser.add_argument("--influence_type", type=str, default='simple')
-    parser.add_argument("--dot_uw", type=str2bool, default=False)
-    parser.add_argument("--pooling", type=str, default='max')
-    parser.add_argument("--temp", type=float, default=1.0)
-    
-    args = parser.parse_args()
-    
+def run(args):    
     epochs = args.epochs
     lr = args.lr
     learning_rule = args.learning_rule
@@ -261,11 +233,41 @@ def main(*args, **kwargs):
                 test_loss += loss.item()
                 
                 acc = (y_hat.argmax(dim=1) == y).float().mean()
-                test_acc += acc.item()
-            
+                test_acc += acc.item() 
             test_loss /= len(test)
             test_acc /= len(test)
             wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
+
+def main(*args, **kwargs):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--epochs', type=int, default=-1)
+    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--learning_rule', type=str, default=None) #end-to-end backprop, softhebb, influencehebb, random
+    parser.add_argument('--dataset', type=str, default='mnist') #mnist, cifar10, cifar100, ms_coco
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--model_type', type=str, default='mlp-1')
+    parser.add_argument('--model_size', type=int, default=128)
+    parser.add_argument('--model_depth', type=int, default=5)
+    parser.add_argument('--supervised', type=str2bool, default=True) #if false, train unsupervised and then fit linear probe
+    parser.add_argument('--task', type=str, default='classification') #if dataset is ms coco, then we can do: a number of different tasks
+    parser.add_argument("--influencehebb_soft_y", type=str2bool, default=True) #if true, use softmaxed y for influence hebbian learning rule
+    parser.add_argument("--influencehebb_soft_z", type=str2bool, default=True) 
+    parser.add_argument("--activation", type=str, default='relu') #relu, mish, triangle
+    parser.add_argument("--norm", type=str, default=None) #layer norm, batch norm
+    parser.add_argument("--adaptive_lr", type=str2bool, default=False) #if true, use adaptive learning rate
+    parser.add_argument("--adaptive_lr_power", type=float, default=0.5) #if true, use adaptive learning rate")
+    parser.add_argument("--lr_schedule", type=str, default='constant')
+    parser.add_argument("--name", type=str, default="")
+    parser.add_argument("--init", type=str, default="normal")
+    parser.add_argument("--R", type=float, default=2.5)
+    parser.add_argument("--influence_type", type=str, default='simple')
+    parser.add_argument("--dot_uw", type=str2bool, default=False)
+    parser.add_argument("--pooling", type=str, default='max')
+    parser.add_argument("--temp", type=float, default=1.0)
+    
+    args = parser.parse_args()
+    
+    run(args)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,26 @@
+{
+    "method": "random",
+    "metric": {"goal": "minimize", "name": "test_loss"},
+    "parameters": {
+        "epochs": {"values": [1, 5, 10]},
+        "lr": {"max": 0.1, "min": 0.0001, "scale": "log"},
+        "learning_rule": {"values": ["influencehebb"]},
+        "dataset": {"values": ["cifar10"]},
+        "model_size": {"values": [128, 256, 512]},
+        "model_depth": {"values": [2,4, 8, 16]},
+        "supervised": {"values": [true]},
+        "task": {"values": ["classification"]},
+        "model_type": {"values": ["mlp-1"]},
+        "norm": {"values": ["none", "batch", "layer"]},
+        "adaptive_lr": {"values": [true, false]},
+        "adaptive_lr_power": {"values": [0.25, 0.5, 1, 2]},
+        "schedule": {"values": ["constant"]},
+        "init": {"values": ["xavier", "uniform", "normal"]},
+        "R": {"values": [1, 2, 3, 4, 5]},
+        "influence_type": {"values": ["grad", "simple"]},
+        "dot_uw": {"values": [false]},
+        "pooling": {"values": ["none", "max", "avg"]},
+        "temp": {"values": [1, 2, 4, 8, 16]},
+        "name": {"values": [""]}
+    }
+}
