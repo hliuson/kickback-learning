@@ -148,20 +148,7 @@ def run(args):
     
     model = model.to(device)  
     
-    tags = [dataset, model_type, learning_rule, f"width-{width}", f"depth-{depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{supervised}"]
-    
-    postfix = ""
-    if args.name != "":
-        postfix = f" | {args.name}"
-    
-    wandb.init(project="influencehebb", config=args, name=f"{dataset} {model_type} {learning_rule} {depth}x{width}{postfix}", tags=tags)
-    
     wandb.watch(model)
-    
-    print(model)
-    
-    #add tags to wandb
-
         
     if epochs == -1:
         train_until_convergence = True
@@ -266,7 +253,12 @@ def main(*args, **kwargs):
     parser.add_argument("--temp", type=float, default=1.0)
     
     args = parser.parse_args()
+    tags = [args.dataset, args.model_type, args.learning_rule, f"width-{args.width}", f"depth-{args.depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{args.supervised}"]
     
+    postfix = ""
+    if args.name != "":
+        postfix = f" | {args.name}"
+    wandb.init(project="influencehebb", config=args, name=f"{args.dataset} {args.model_type} {args.learning_rule} {args.depth}x{args.width}{postfix}", tags=tags)
     run(args)
 
 

@@ -5,7 +5,7 @@
         "epochs": {"values": [-1]},
         "batch_size": {"values": [8, 32, 128]},
         "lr": {"values": [0.1, 0.01, 0.001]},
-        "learning_rule": {"values": ["influencehebb"]},
+        "learning_rule": {"values": ["softhebb"]},
         "dataset": {"values": ["cifar10"]},
         "model_size": {"values": [128, 256, 512]},
         "model_depth": {"values": [2, 4, 8, 16]},
