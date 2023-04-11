@@ -190,6 +190,7 @@ def run(args):
             test_loss /= len(test)
             test_acc /= len(test)
             wandb.log({"test_loss": test_loss, "test_acc": test_acc})
+            print(f"Test loss: {test_loss}, Test acc: {test_acc}")
         
         if train_until_convergence:
             if last_loss < test_loss + 0.001:
