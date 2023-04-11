@@ -78,7 +78,7 @@ def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_
         
         dw_accum.append(dw)
     dw = torch.cat(dw_accum, dim=0) 
-    del dw_accum, xb, ub, yb, uw, inner, ib
+    del dw_accum, xb, ub, yb, uw, inner
         #wandb.log({'log/weightnorm': torch.mean(norm)}, commit=False)
             
     if adaptive:
