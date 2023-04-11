@@ -6,21 +6,22 @@ import torch.nn.functional as F
 from abc import ABC, abstractmethod
 
 class SofthebbArgs:
-    def __init__(self, rate, adaptive, p, influence=None, dot_uw=False):
+    def __init__(self, rate, adaptive, p, influence=None, dot_uw=False, temp=1):
         self.rate = rate
         self.adaptive = adaptive
         self.p = p
-        self.influence = influence
+        self.temp = temp
         self.dot_uw = dot_uw
         
 class InfluenceArgs:
-    def __init__(self, rate, adaptive, p, dot_uw=False, softz = True, softy = True, influence_type='grad'):
+    def __init__(self, rate, adaptive, p, dot_uw=False, softz = True, softy = True, influence_type='grad', temp=1):
         self.rate = rate
         self.adaptive = adaptive
         self.p = p
         self.dot_uw = dot_uw
         self.softz = softz
         self.softy = softy
+        self.temp = temp
         self.influence_type = influence_type
 class HebbianLayer(ABC):
     @abstractmethod
@@ -47,36 +48,51 @@ class HebbianLayer(ABC):
         print('getnext called, self.next: ', self.next)
         return self.next
 
-def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False):    
-    if dot_uw:
-        uw = torch.matmul(u, weight) #(b, o) x (o, i) = (b, i)
-        uw = uw.view(-1, 1, uw.shape[-1]) #shape (b, 1, i)
-    else:
-        u = u.view(-1, u.shape[-1], 1) #shape (b, o, 1)
-        uw = u * weight #not matmul since u is broadcasted. shape (b, o, i)
-    x = x.view(-1, 1, x.shape[-1]) #shape (b, 1, i)
-    inner = x - uw #shape (b, o, i)
-    y = y.view(-1, y.shape[-1], 1) #shape (b, o, 1)
-    dw = inner * y #shape (b, o, i)
-    
-    norm = torch.norm(weight, dim=1)
-    
-    #wandb.log({'log/weightnorm': torch.mean(norm)}, commit=False)
+def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_size=256):
+    #batch/patch number is very large so we chunk it
+    num_batches = x.shape[0] // batch_size
+    if x.shape[0] % batch_size > 0:
+        num_batches += 1
+
+    dw_accum = []  
+    for batch_idx in range(num_batches):
+        xb = x[batch_idx*batch_size:(batch_idx+1)*batch_size]
+        ub = u[batch_idx*batch_size:(batch_idx+1)*batch_size]
+        yb = y[batch_idx*batch_size:(batch_idx+1)*batch_size]
+        if influence is not None:
+            ib = influence[batch_idx*batch_size:(batch_idx+1)*batch_size]
+        if dot_uw:
+            uw = torch.matmul(ub, weight) #(b, o) x (o, i) = (b, i)
+            uw = uw.view(-1, 1, uw.shape[-1]) #shape (b, 1, i)
+        else:
+            ub = ub.view(-1, ub.shape[-1], 1) #shape (b, o, 1)
+            uw = ub * weight #not matmul since u is broadcasted. shape (b, o, i)
+        xb = xb.view(-1, 1, xb.shape[-1]) #shape (b, 1, i)
+        inner = xb - uw #shape (b, o, i)
+        yb = yb.view(-1, yb.shape[-1], 1) #shape (b, o, 1)
+        dw = inner * yb #shape (b, o, i)
         
+        if influence is not None:
+            #center and normalize influence
+            dw = dw * ib 
+        
+        dw_accum.append(dw)
+        
+    dw = torch.cat(dw_accum, dim=0) 
+        #wandb.log({'log/weightnorm': torch.mean(norm)}, commit=False)
+            
     if adaptive:
+        norm = torch.norm(weight, dim=1)
         diff = torch.abs(1 - norm)
         rate = rate * torch.pow(diff, p)  
         rate = rate.view(-1,1)
 
-    if influence is not None:
-        #center and normalize influence
-        dw = dw * influence
         #wandb.log({'influence': torch.mean(torch.abs(influence))})
     
     #reduce over batch
     dw = torch.mean(dw, dim=0) #shape (o, i)
     step = rate * dw
-    wandb.log({'log/step size': torch.mean(torch.abs(step))}, commit=False)
+    #wandb.log({'log/step size': torch.mean(torch.abs(step))}, commit=False)
     return step
 
 def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: HebbianLayer, next: HebbianLayer, args: InfluenceArgs):
@@ -84,7 +100,7 @@ def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: Hebbian
             
         z = next.output()
         if args.softz:
-            z = torch.softmax(z, dim=1)    
+            z = torch.softmax(z / args.temp, dim=1)
             
         if influence_type == 'grad':
             pre = self.output()
@@ -98,7 +114,7 @@ def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: Hebbian
         influence = influence.view(-1, influence.shape[1], 1) #shape (b, o, 1)
         
         if args.softy:
-            y = torch.softmax(y, dim=1)
+            y = torch.softmax(y / args.temp, dim=1)
 
         
         step = _hebb(x, u, y, self.getweight(), args.rate, args.adaptive, args.p, influence, dot_uw=args.dot_uw)
@@ -152,7 +168,12 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         self.y = self.act(self.u)
         return self.y
     
-    def softhebb(self, rate, adaptive=False, p=0.5, dot_uw=False, temp=1):
+    def softhebb(self, args:SofthebbArgs):
+        temp = args.temp
+        rate = args.rate
+        adaptive = args.adaptive
+        p = args.p
+        dot_uw = args.dot_uw
         x = self.x
         u = self.u #b, o
         y = F.softmax(self.y / temp, dim=1)
@@ -230,7 +251,11 @@ class HebbianConv2d(torch.nn.Module, HebbianLayer):
         self.y = self.act(self.u)
         return self.y
             
-    def softhebb(self, rate, adaptive=False, p=0.5, dot_uw=False, temp=1):
+    def softhebb(self, args:SofthebbArgs):
+        temp = args.temp
+        rate = args.rate
+        adaptive = args.adaptive
+        p = args.p
         x = F.unfold(self.x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding, dilation=self.dilation)
         u = self.u
         
@@ -246,7 +271,15 @@ class HebbianConv2d(torch.nn.Module, HebbianLayer):
         step = _hebb(x, u, y, filter, rate, adaptive, p).view(self.filter.shape)
         self.filter += step
         
-    def influencehebb(self, rate, softz, softy, adaptive=False, p=0.5, influence_type='simple', dot_uw=False, temp=1):
+    def influencehebb(self, args: InfluenceArgs):
+        temp = args.temp
+        softz = args.softz
+        influence_type = args.influence_type
+        rate = args.rate
+        adaptive = args.adaptive
+        p = args.p
+        dot_uw = args.dot_uw
+        
         x = F.unfold(self.x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding, dilation=self.dilation)
         u = self.u
         
@@ -262,21 +295,17 @@ class HebbianConv2d(torch.nn.Module, HebbianLayer):
         z = self.next.output()
         if softz:
             z = F.softmax(z / temp, dim=1) #softmax over output neurons
-        
-
-        #influence = torch.matmul(z, self.next.weight) #shape (b, o)
-        #influence = influence.view(-1, influence.shape[1], 1) #shape (b, o, 1)
     
         if influence_type == 'grad':
             pre = self.y #shape (b, c, h, w)
             post = self.next.output()
             influence = torch.autograd.grad(post, pre, grad_outputs=z, retain_graph=True)[0]
-            influence = F.unfold(influence, kernel_size=1, stride=1, padding=0).view(-1, self.out_channels)
+            influence = F.unfold(influence, kernel_size=1, stride=1, padding=0)
         else:
             raise NotImplementedError()
             
         influence = influence.permute(0, 2, 1) #permute to (b, h*w, o) 
-        influence = influence.view(-1, influence.shape[1], 1) #shape (b*p, o, 1)
+        influence = influence.reshape(-1, self.out_channels, 1) #reshape to (b*h*w, o)
         
         filter = self.filter.view(self.out_channels, -1)
         step = _hebb(x, u, y, filter, rate, adaptive, p, influence, dot_uw=dot_uw).view(self.filter.shape)
@@ -292,6 +321,9 @@ class HebbianConv2d(torch.nn.Module, HebbianLayer):
         
     def output(self):
         return self.y
+    
+    def getweight(self):
+        return self.filter
         
 class SkipBlock(torch.nn.Module, HebbianLayer):
     def __init__(self, in_dim, out_dim, init=None, init_radius=None, act=nn.ReLU(), skip=True):
@@ -332,7 +364,6 @@ class SkipBlock(torch.nn.Module, HebbianLayer):
         self.layer.softhebb(args)
     
     def influencehebb(self, args: InfluenceArgs):
-        
         step = _influencehebb(self.layer.x, self.layer.u, self.layer.y, self, self.next, args)
         self.layer.weight += step
 

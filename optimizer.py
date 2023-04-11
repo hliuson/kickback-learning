@@ -14,10 +14,13 @@ class HebbianOptimizer:
             self.learning_rule = self.softhebb
             if supervised:
                 self.hebbianlayers = self.hebbianlayers[:-1]
-        elif learning_rule == 'softmulthebb':
-            self.learning_rule = self.softmulthebb
-            if supervised:
-                self.hebbianlayers = self.hebbianlayers[:-1]
+            self.args = SofthebbArgs(
+                rate = lr,
+                adaptive=adaptive_lr,
+                p = adaptive_lr_p,
+                dot_uw=dot_uw,
+                temp = temp
+            )
         elif learning_rule == 'influencehebb':
             self.learning_rule = self.influencehebb
             self.hebbianlayers = self.hebbianlayers[:-1]
@@ -30,6 +33,7 @@ class HebbianOptimizer:
                 softy=influencehebb_soft_y,
                 softz=influencehebb_soft_z,
                 influence_type=influence_type,
+                temp = temp
             )
             
         elif learning_rule == 'random':
@@ -60,7 +64,7 @@ class HebbianOptimizer:
     def softhebb(self, rate=0.001):
         with torch.no_grad():
             for i, layer in enumerate(self.hebbianlayers):
-                layer.softhebb(rate, adaptive=self.adaptive_lr, p=self.p, dot_uw=self.dot_uw, temp=self.temp)
+                layer.softhebb(self.args)
                 #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
                 
         if self.supervised:

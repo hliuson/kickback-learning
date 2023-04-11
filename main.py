@@ -147,8 +147,8 @@ def run(args):
         
     
     model = model.to(device)  
+    print(model)
     
-    wandb.watch(model)
         
     if epochs == -1:
         train_until_convergence = True
@@ -251,15 +251,20 @@ def main(*args, **kwargs):
     parser.add_argument("--dot_uw", type=str2bool, default=False)
     parser.add_argument("--pooling", type=str, default='max')
     parser.add_argument("--temp", type=float, default=1.0)
+    parser.add_argument("--n_trials", type=int, default=1)
     
     args = parser.parse_args()
-    tags = [args.dataset, args.model_type, args.learning_rule, f"width-{args.width}", f"depth-{args.depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{args.supervised}"]
+    tags = [args.dataset, args.model_type, args.learning_rule, f"width-{args.model_size}", f"depth-{args.model_depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{args.supervised}"]
     
-    postfix = ""
-    if args.name != "":
-        postfix = f" | {args.name}"
-    wandb.init(project="influencehebb", config=args, name=f"{args.dataset} {args.model_type} {args.learning_rule} {args.depth}x{args.width}{postfix}", tags=tags)
-    run(args)
+    
+    for i in range(args.n_trials):
+        postfix = ""
+        if args.name != "":
+            postfix = f" | {args.name}"
+        if args.n_trials > 1:
+            postfix += f" | trial {i+1}/{args.n_trials}"
+        wandb.init(project="influencehebb", config=args, name=f"{args.dataset} {args.model_type} {args.learning_rule} {args.model_depth}x{args.model_size}{postfix}", tags=tags)
+        run(args)
 
 
 if __name__ == '__main__':
