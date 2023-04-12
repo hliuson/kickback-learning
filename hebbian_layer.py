@@ -47,12 +47,25 @@ class HebbianLayer(ABC):
     def getnext(self):
         print('getnext called, self.next: ', self.next)
         return self.next
+    
+def negate_non_maximal(tensor):
+    last_dim = tensor.ndim - 1
+    max_indices = torch.argmax(tensor, dim=last_dim)
+    mask = torch.zeros_like(tensor, dtype=torch.bool)
+    
+    for idx, max_idx in enumerate(max_indices):
+        mask[idx, max_idx] = True
+    
+    negated_tensor = torch.where(mask, tensor, -tensor)
+    return negated_tensor
 
 def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_size=256):
     #batch/patch number is very large so we chunk it
     num_batches = x.shape[0] // batch_size
     if x.shape[0] % batch_size > 0:
         num_batches += 1
+
+    y = negate_non_maximal(y)
 
     dw_accum = []  
     for batch_idx in range(num_batches):
@@ -168,7 +181,7 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         self.y = self.act(self.u)
         return self.y
     
-    def softhebb(self, args:SofthebbArgs):
+    def softhebb(self, args:SofthebbArgs):        
         temp = args.temp
         rate = args.rate
         adaptive = args.adaptive
@@ -180,7 +193,7 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         
         step = _hebb(x, u, y, self.weight, rate, adaptive, p, dot_uw=dot_uw)
         self.weight += step
-        
+    
         
     def influencehebb(self, args: InfluenceArgs):
         x = self.x
