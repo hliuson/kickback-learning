@@ -34,8 +34,6 @@ class MLP1(torch.nn.Module):
                 #self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
             self.torso.add_module(f'layer_{i}', layer)
             
-            
-            
             self.layers += [layer]
             
         for i, layer in enumerate(self.layers):
@@ -91,6 +89,34 @@ class SkipMLP(torch.nn.Module):
         x = self.torso(x)
         return x
 
+class MLPMixer(torch.nn.Module):
+    def __init__(self, img_dim, img_chan, hidden_chan, out_dim, hidden_dim, num_layers, patch_size, num_classes,
+                 activation=nn.ReLU, normlayer=None, init=None, init_radius=None, supervised=True):
+        super().__init__()
+        
+        assert img_dim % patch_size == 0, "Image dimensions must be divisible by the patch size."
+        
+        num_patches = (img_dim // patch_size) ** 2
+        
+
+        self.token_mixing = nn.ModuleList()
+        self.channel_mixing = nn.ModuleList()
+
+        self.normlayer = normlayer
+        self.activation = activation
+
+
+    def forward(self, x):
+        for token_mlp, channel_mlp in zip(self.token_mixing, self.channel_mixing):
+            x = token_mlp(x)
+            x = x.transpose(1, 2)
+            x = channel_mlp(x)
+            x = x.transpose(1, 2)
+
+        x = self.flatten(x)
+        x = self.head(x)
+
+        return x
 
 class CNN1(torch.nn.Module):
     def __init__(self, img_dim, img_chan, hidden_chan, out_dim, num_layers,

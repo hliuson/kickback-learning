@@ -1,1 +1,1 @@
-python .\main.py --learning_rule influencehebb --model_type mlp-1 --lr 1 --model_depth 4 --model_size 128 --norm batch --adaptive_lr True --dataset cifar10 --epochs -1 --batch_size 32 --supervised True --name "" --influence_type grad --n_trials 1 --temp 4 --lr_schedule exponential --epochs 1
+python .\main.py --learning_rule kickback --model_type mlp-1 --lr 0.1 --model_depth 4 --model_size 128 --norm layer --adaptive_lr True --dataset cifar10 --epochs -1 --batch_size 32 --supervised True --name "" --influence_type grad --temp 4 --lr_schedule exponential --epochs 1

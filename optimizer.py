@@ -44,6 +44,12 @@ class HebbianOptimizer:
             self.learning_rule = self.backprop
             if not supervised:
                 raise Exception('end2end learning rule is not compatible with unsupervised learning')
+        elif learning_rule == 'kickback':
+            self.learning_rule = self.kickback
+            self.hebbianlayers = self.hebbianlayers[:-1]
+            self.args = KickbackArgs(
+                rate = lr,
+            )
         else:
             raise Exception(f'learning rule: {learning_rule} not recognized')
             
@@ -76,6 +82,7 @@ class HebbianOptimizer:
         return self.lr * 0.95 ** (self.n_steps / 100)
     
     def softhebb(self, rate=0.001):
+        self.args.rate = rate
         with torch.no_grad():
             for i, layer in enumerate(self.hebbianlayers):
                 layer.softhebb(self.args)
@@ -86,6 +93,7 @@ class HebbianOptimizer:
         self.clear_grad()
 
     def influencehebb(self, rate=0.001):
+        self.args.rate = rate
         with torch.no_grad():
             for i, layer in enumerate(self.hebbianlayers):
                 layer.influencehebb(self.args)
@@ -95,7 +103,19 @@ class HebbianOptimizer:
             self.optim.step()
         else:
             with torch.no_grad():
+                raise NotImplementedError
                 self.head.softhebb(rate, adaptive=self.adaptive_lr, p=self.p)
+        self.clear_grad()
+
+    def kickback(self, rate=0.001):
+        self.args.rate = rate
+        with torch.no_grad():
+            for i, layer in enumerate(self.hebbianlayers):
+                layer.kickback(self.args)
+                #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
+        
+        if self.supervised:
+            self.optim.step()
         self.clear_grad()
     
     def random(self, rate=0.001):

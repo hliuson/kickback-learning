@@ -34,7 +34,7 @@ def run(args):
     epochs = args.epochs
     lr = args.lr
     learning_rule = args.learning_rule
-    assert learning_rule in ['end2end', 'softhebb', 'softmulthebb', 'influencehebb', 'random']
+    assert learning_rule in ['end2end', 'softhebb', 'softmulthebb', 'influencehebb', 'random', 'kickback']
     
     if learning_rule == 'random':
         epochs = 0

@@ -23,6 +23,10 @@ class InfluenceArgs:
         self.softy = softy
         self.temp = temp
         self.influence_type = influence_type
+        
+class KickbackArgs:
+    def __init__(self, rate):
+        self.rate = rate
 class HebbianLayer(ABC):
     @abstractmethod
     def softhebb(self, args:SofthebbArgs):
@@ -196,6 +200,20 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         step = _hebb(x, u, y, self.weight, rate, adaptive, p, dot_uw=dot_uw)
         self.weight += step
     
+    def kickback(self, args: KickbackArgs):
+        x = self.x
+        next = self.next
+        pre = self.output()
+        post = next.output()
+        z = post
+        influence = torch.autograd.grad(post, pre, grad_outputs=z, retain_graph=True)[0]
+        
+        rate = args.rate
+        x = x.view(-1, 1, self.in_dim)
+        influence = influence.view(-1, self.out_dim, 1)
+        step = x * influence
+        step = torch.mean(step, dim=0)
+        self.weight += step*rate
         
     def influencehebb(self, args: InfluenceArgs):
         x = self.x
@@ -203,6 +221,7 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         y = self.y
         
         step = _influencehebb(x, u, y, self, self.next, args)
+        self.weight += step
         
     def clear_grad(self):
         self.weight.grad = None
