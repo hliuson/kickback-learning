@@ -36,6 +36,9 @@ def run(args):
     learning_rule = args.learning_rule
     assert learning_rule in ['end2end', 'softhebb', 'softmulthebb', 'influencehebb', 'random']
     
+    if learning_rule == 'random':
+        epochs = 0
+    
     dataset = args.dataset
     assert dataset in ['mnist', 'cifar10', 'cifar100', 'ms_coco']
     
@@ -86,12 +89,6 @@ def run(args):
         pool = nn.MaxPool2d
     if args.pooling == 'avg':
         pool = nn.AvgPool2d
-    
-    if args.adaptive_lr:
-        if learning_rule not in ['softhebb', 'softmulthebb', 'influencehebb']:
-            raise Exception('adaptive learning rate only works with softhebb and influencehebb')
-        #if schedule != 'constant':
-            #raise Exception('adaptive learning rate only works with constant learning rate schedule')
 
     adaptive_lr_power = args.adaptive_lr_power
     
