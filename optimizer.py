@@ -49,9 +49,9 @@ class HebbianOptimizer:
             
         self.supervised = supervised
         if supervised and not learning_rule == 'end2end':
-            self.optim = torch.optim.SGD(self.head.parameters(), lr=lr)
+            self.optim = torch.optim.SGD(self.head.parameters(), lr=1)
         if supervised and learning_rule == 'end2end':
-            self.optim = torch.optim.SGD(self.model.parameters(), lr=lr)
+            self.optim = torch.optim.AdamW(self.model.parameters())
             
         self.adaptive_lr = adaptive_lr
         self.p = adaptive_lr_p
@@ -59,7 +59,21 @@ class HebbianOptimizer:
         self.dot_uw = dot_uw
         self.temp = temp
         
-            
+        if schedule == 'constant':
+            self.schedule = self.const_schedule
+        elif schedule == 'exponential':
+            self.schedule = self.exp_schedule
+        else:
+            raise Exception(f'schedule: {schedule} not recognized')
+        
+        self.epoch = 0
+        self.n_steps = 0
+        
+    def const_schedule(self):
+        return self.lr
+    
+    def exp_schedule(self):
+        return self.lr * 0.95 ** (self.n_steps / 100)
     
     def softhebb(self, rate=0.001):
         with torch.no_grad():
@@ -93,7 +107,11 @@ class HebbianOptimizer:
         self.optim.zero_grad()
     
     def step(self):
-        self.learning_rule(self.lr)
+        self.learning_rule(self.schedule())
+        self.n_steps += 1
+        
+    def inc_epoch(self):
+        self.epoch += 1
     
     def clear_grad(self):
         if self.supervised:

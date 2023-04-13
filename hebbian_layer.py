@@ -65,7 +65,7 @@ def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_
     if x.shape[0] % batch_size > 0:
         num_batches += 1
 
-    y = negate_non_maximal(y)
+    #y = negate_non_maximal(y)
 
     dw_accum = []  
     for batch_idx in range(num_batches):
@@ -104,8 +104,10 @@ def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_
     
     #reduce over batch
     dw = torch.mean(dw, dim=0) #shape (o, i)
+    
+    wandb.log({'log/rate': torch.mean(rate)})
+    
     step = rate * dw
-    #wandb.log({'log/step size': torch.mean(torch.abs(step))}, commit=False)
     return step
 
 def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: HebbianLayer, next: HebbianLayer, args: InfluenceArgs):

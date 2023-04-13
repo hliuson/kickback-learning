@@ -6,6 +6,8 @@ import os
 import wandb
 import sys
 import argparse
+import uuid
+import json
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,7 +19,6 @@ from optimizer import *
 from hebbian_layer import *
 from models import *
 from utils import *
-
                
 def str2bool(v):
     if isinstance(v, bool):
@@ -89,8 +90,8 @@ def run(args):
     if args.adaptive_lr:
         if learning_rule not in ['softhebb', 'softmulthebb', 'influencehebb']:
             raise Exception('adaptive learning rate only works with softhebb and influencehebb')
-        if schedule != 'constant':
-            raise Exception('adaptive learning rate only works with constant learning rate schedule')
+        #if schedule != 'constant':
+            #raise Exception('adaptive learning rate only works with constant learning rate schedule')
 
     adaptive_lr_power = args.adaptive_lr_power
     
@@ -192,39 +193,46 @@ def run(args):
             wandb.log({"test_loss": test_loss, "test_acc": test_acc})
             print(f"Test loss: {test_loss}, Test acc: {test_acc}")
         
+        opt.inc_epoch()
         if train_until_convergence:
             if last_loss < test_loss + 0.001:
                 break
             last_loss = test_loss
             
-    if not supervised:
-        print('Completed training, now probing')
-        model.head.init_params("xavier", 1)
-        opt = torch.optim.SGD(model.head.parameters(), lr=lr)
-        for epoch in range(epochs):
-            for i, (x, y) in enumerate(train):
-                x, y = x.to(device), y.to(device)
-                y_hat = model(x)
-                loss = F.cross_entropy(y_hat, y)
-                if loss.isnan():
-                    raise Exception('Loss is nan')
-                loss.backward(retain_graph=True)
-                opt.step()
-                wandb.log({"probe_loss": loss.item()})
-            
-            test_loss = 0
-            test_acc = 0
-            for i, (x, y) in enumerate(test):
-                x, y = x.to(device), y.to(device)
-                y_hat = model(x)
-                loss = F.cross_entropy(y_hat, y)
-                test_loss += loss.item()
-                
-                acc = (y_hat.argmax(dim=1) == y).float().mean()
-                test_acc += acc.item() 
-            test_loss /= len(test)
-            test_acc /= len(test)
-            wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
+    print('Completed training, now probing')
+    model.head.init_params("xavier", 1)
+    opt = torch.optim.AdamW(model.head.parameters())
+    for epoch in range(5):
+        for i, (x, y) in enumerate(train):
+            x, y = x.to(device), y.to(device)
+            y_hat = model(x)
+            loss = F.cross_entropy(y_hat, y)
+            if loss.isnan():
+                raise Exception('Loss is nan')
+            loss.backward(retain_graph=True)
+            opt.step()
+            wandb.log({"probe_loss": loss.item()})
+        
+    test_loss = 0
+    test_acc = 0
+    for i, (x, y) in enumerate(test):
+        x, y = x.to(device), y.to(device)
+        y_hat = model(x)
+        loss = F.cross_entropy(y_hat, y)
+        test_loss += loss.item()
+        
+        acc = (y_hat.argmax(dim=1) == y).float().mean()
+        test_acc += acc.item() 
+    test_loss /= len(test)
+    test_acc /= len(test)
+    wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
+    
+    if args.save:
+        uid = uuid.uuid4()
+        torch.save(model.state_dict(), f"models/{wandb.run.name}_{uid}.pt")
+        #save args as JSON
+        with open(f"models/{wandb.run.name}_{uid}.json", 'w') as f:
+            json.dump(vars(args), f)
 
 def main(*args, **kwargs):
     parser = argparse.ArgumentParser()
@@ -253,6 +261,7 @@ def main(*args, **kwargs):
     parser.add_argument("--pooling", type=str, default='max')
     parser.add_argument("--temp", type=float, default=1.0)
     parser.add_argument("--n_trials", type=int, default=1)
+    parser.add_argument("--save", type=str2bool, default=False)
     
     args = parser.parse_args()
     tags = [args.dataset, args.model_type, args.learning_rule, f"width-{args.model_size}", f"depth-{args.model_depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{args.supervised}"]
