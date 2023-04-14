@@ -81,7 +81,7 @@ def run(args):
     assert args.lr_schedule in ['constant', 'exponential']
     schedule = args.lr_schedule
     
-    assert args.influence_type in ['simple', 'grad', "one"]
+    assert args.influence_type in ['simple', 'grad', "one", "random", "full_random"]
     influence_type = args.influence_type
     
     assert args.pooling in ['max', 'avg']
@@ -131,7 +131,7 @@ def run(args):
     
     model = None
     if model_type == 'mlp-1':
-        model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=args.R)
+        model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=args.R, dropout=args.dropout)
     if model_type == 'cnn-1':
         model = CNN1(img_dim, img_chan, width, mlp_out, depth, activation=act, normlayer=norm, init=init, init_radius=args.R, poollayer=pool)
     if model_type == 'skip-mlp':
@@ -156,12 +156,13 @@ def run(args):
 
     opt = HebbianOptimizer(model, lr=lr, learning_rule=learning_rule, supervised=supervised,
                            influencehebb_soft_y=influencehebb_soft_y, influencehebb_soft_z=influencehebb_soft_z, adaptive_lr=args.adaptive_lr, adaptive_lr_p=adaptive_lr_power,
-                           schedule=schedule, influence_type=influence_type, dot_uw=args.dot_uw, temp=args.temp)
+                           schedule=schedule, influence_type=influence_type, dot_uw=args.dot_uw, temp=args.temp, const_feedback=args.const_feedback)
     
 
     last_loss = float('inf')
     for epoch in range(epochs):
         print(f"Epoch {epoch}")
+        model.train()
         for i, (x, y) in enumerate(train):
             x, y = x.to(device), y.to(device)
             y_hat = model(x)
@@ -176,6 +177,7 @@ def run(args):
         test_loss = 0
         test_acc = 0
         if supervised:
+            model.eval()
             for i, (x, y) in enumerate(test):
                 x, y = x.to(device), y.to(device)
                 y_hat = model(x)
@@ -198,7 +200,8 @@ def run(args):
             
     print('Completed training, now probing')
     model.head.init_params("xavier", 1)
-    opt = torch.optim.AdamW(model.head.parameters())
+    opt = torch.optim.SGD(model.head.parameters(), lr=0.1)
+    model.train()
     for epoch in range(5):
         for i, (x, y) in enumerate(train):
             x, y = x.to(device), y.to(device)
@@ -212,6 +215,7 @@ def run(args):
         
     test_loss = 0
     test_acc = 0
+    model.eval()
     for i, (x, y) in enumerate(test):
         x, y = x.to(device), y.to(device)
         y_hat = model(x)
@@ -252,13 +256,15 @@ def main(*args, **kwargs):
     parser.add_argument("--lr_schedule", type=str, default='constant')
     parser.add_argument("--name", type=str, default="")
     parser.add_argument("--init", type=str, default="normal")
-    parser.add_argument("--R", type=float, default=2.5)
+    parser.add_argument("--R", type=float, default=5)
     parser.add_argument("--influence_type", type=str, default='simple')
     parser.add_argument("--dot_uw", type=str2bool, default=False)
     parser.add_argument("--pooling", type=str, default='max')
     parser.add_argument("--temp", type=float, default=1.0)
     parser.add_argument("--n_trials", type=int, default=1)
     parser.add_argument("--save", type=str2bool, default=False)
+    parser.add_argument("--const_feedback", type=str2bool, default=True)
+    parser.add_argument("--dropout", type=str2bool, default=False)
     
     args = parser.parse_args()
     tags = [args.dataset, args.model_type, args.learning_rule, f"width-{args.model_size}", f"depth-{args.model_depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{args.supervised}"]

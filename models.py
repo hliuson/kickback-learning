@@ -3,7 +3,8 @@ import torch
 import torch.nn as nn
 
 class MLP1(torch.nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim, num_layers, activation=nn.ReLU, normlayer=None, init=None, init_radius=None, supervised=True) -> None:
+    def __init__(self, in_dim, out_dim, hidden_dim, num_layers, activation=nn.ReLU,
+                 normlayer=None, init=None, init_radius=None, supervised=True, dropout=True) -> None:
         super().__init__()
         self.torso = torch.nn.Sequential()
         self.layers = []
@@ -33,6 +34,8 @@ class MLP1(torch.nn.Module):
             #if i == num_layers-1:
                 #self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
             self.torso.add_module(f'layer_{i}', layer)
+            if dropout and i < num_layers-1:
+                self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
             
             self.layers += [layer]
             

@@ -1,1 +1,3 @@
-python .\main.py --learning_rule kickback --model_type mlp-1 --lr 0.1 --model_depth 4 --model_size 128 --norm layer --adaptive_lr True --dataset cifar10 --epochs -1 --batch_size 32 --supervised True --name "" --influence_type grad --temp 4 --lr_schedule exponential --epochs 1
+python .\main.py --learning_rule influencehebb --model_type mlp-1 --lr 0.1 --model_depth 3 --model_size 512 --norm layer --adaptive_lr True --dataset cifar10 --epochs -1 --batch_size 32 --supervised True --name "EXP08 unfixed random feeback" --influence_type random  --temp 4 --const_feedback False --dropout True
+
+python .\main.py --learning_rule influencehebb --model_type mlp-1 --lr 0.1 --model_depth 3 --model_size 512 --norm layer --adaptive_lr True --dataset cifar10 --epochs -1 --batch_size 32 --supervised True --name "EXP08 full random" --influence_type full_random  --temp 4 --const_feedback True --dropout True

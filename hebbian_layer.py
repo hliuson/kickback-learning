@@ -14,7 +14,8 @@ class SofthebbArgs:
         self.dot_uw = dot_uw
         
 class InfluenceArgs:
-    def __init__(self, rate, adaptive, p, dot_uw=False, softz = True, softy = True, influence_type='grad', temp=1):
+    def __init__(self, rate, adaptive, p, dot_uw=False, softz = True, softy = True,
+                 influence_type='grad', temp=1, const_feedback=False):
         self.rate = rate
         self.adaptive = adaptive
         self.p = p
@@ -23,11 +24,16 @@ class InfluenceArgs:
         self.softy = softy
         self.temp = temp
         self.influence_type = influence_type
+        self.const_feedback = const_feedback #const feedback matrix vs new random matrix each time
         
 class KickbackArgs:
     def __init__(self, rate):
         self.rate = rate
 class HebbianLayer(ABC):
+    def __init__(self, next_layer=None):
+        self.next = next_layer
+        self.feedback = None
+    
     @abstractmethod
     def softhebb(self, args:SofthebbArgs):
         pass
@@ -108,10 +114,14 @@ def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_
     
     #reduce over batch
     dw = torch.mean(dw, dim=0) #shape (o, i)
-    
-    wandb.log({'log/rate': torch.mean(rate)})
+
     
     step = rate * dw
+    if rate is torch.Tensor:
+        wandb.log({'log/rate': torch.mean(rate)}, commit=False)
+    else:
+        wandb.log({'log/rate': rate}, commit=False)
+    wandb.log({'log/stepnorm': torch.mean(torch.norm(step, dim=1))}, commit=False)
     return step
 
 def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: HebbianLayer, next: HebbianLayer, args: InfluenceArgs):
@@ -125,11 +135,26 @@ def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: Hebbian
             pre = self.output()
             post = next.output()
             influence = torch.autograd.grad(post, pre, grad_outputs=z, retain_graph=True)[0]
-
         if influence_type == 'simple':
             raise NotImplementedError
         if influence_type == 'one':
-            raise NotImplementedError
+            pre = self.output()
+            post = next.output()
+            z = torch.ones_like(z)
+            influence = torch.autograd.grad(post, pre, grad_outputs=z, retain_graph=True)[0]
+        if influence_type == 'random':
+            if args.const_feedback:
+                if next.feedback is None:
+                    next.feedback = torch.rand(z.shape[1], y.shape[1], device=z.device)
+                feedback = next.feedback
+            else:
+                feedback = torch.rand(z.shape[1], y.shape[1], device=z.device)
+            influence = torch.matmul(z, feedback)
+        if influence_type == 'full_random':
+            influence = torch.rand_like(y)
+            
+        #normalize influence
+        influence = influence / (torch.norm(influence, dim=1, keepdim=True) + 1e-8)
         influence = influence.view(-1, influence.shape[1], 1) #shape (b, o, 1)
         
         if args.softy:
@@ -162,6 +187,8 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         self.act = act
         if act is None:
             self.act = torch.nn.Identity()
+            
+        self.feedback = None
 
     def init_params(self, init="xavier", init_radius="1"):
         R = init_radius
@@ -210,8 +237,13 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         
         rate = args.rate
         x = x.view(-1, 1, self.in_dim)
+        
+        y = F.softmax(self.y, dim=1)
+        y = negate_non_maximal(y)
+        y = y.view(-1, self.out_dim, 1)
+        
         influence = influence.view(-1, self.out_dim, 1)
-        step = x * influence
+        step = x * influence * y
         step = torch.mean(step, dim=0)
         self.weight += step*rate
         

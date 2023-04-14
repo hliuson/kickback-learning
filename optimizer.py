@@ -4,7 +4,7 @@ from hebbian_layer import *
 class HebbianOptimizer:
     def __init__(self, model, lr=0.001, learning_rule='softhebb', supervised=True, influencehebb_soft_y=True,
                  influencehebb_soft_z=True, adaptive_lr=False, adaptive_lr_p=1, schedule=None, influence_type='simple',
-                 dot_uw=False, temp=1):
+                 dot_uw=False, temp=1, const_feedback=False):
         self.model = model
         self.lr = lr
         self.hebbianlayers = model.layers
@@ -33,7 +33,8 @@ class HebbianOptimizer:
                 softy=influencehebb_soft_y,
                 softz=influencehebb_soft_z,
                 influence_type=influence_type,
-                temp = temp
+                temp = temp,
+                const_feedback=const_feedback
             )
             
         elif learning_rule == 'random':
