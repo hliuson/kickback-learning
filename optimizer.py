@@ -4,7 +4,7 @@ from hebbian_layer import *
 class HebbianOptimizer:
     def __init__(self, model, lr=0.001, learning_rule='softhebb', supervised=True, influencehebb_soft_y=True,
                  influencehebb_soft_z=True, adaptive_lr=False, adaptive_lr_p=1, schedule=None, influence_type='simple',
-                 dot_uw=False, temp=1, const_feedback=False):
+                 dot_uw=False, temp=1, const_feedback=False, exp_avg=0.95, group_size=-1, shuffle=False):
         self.model = model
         self.lr = lr
         self.hebbianlayers = model.layers
@@ -45,6 +45,16 @@ class HebbianOptimizer:
             self.learning_rule = self.backprop
             if not supervised:
                 raise Exception('end2end learning rule is not compatible with unsupervised learning')
+        elif learning_rule == 'simplesofthebb':
+            self.learning_rule = self.simplesofthebb
+            self.hebbianlayers = self.hebbianlayers[:-1]
+            self.args = SimpleSofthebbArgs(
+                rate = lr,
+                temp = temp,
+                exp_avg=exp_avg,
+                group_size=group_size,
+                shuffle=shuffle
+            )
         elif learning_rule == 'kickback':
             self.learning_rule = self.kickback
             self.hebbianlayers = self.hebbianlayers[:-1]
@@ -80,6 +90,7 @@ class HebbianOptimizer:
         return self.lr
     
     def exp_schedule(self):
+        #TODO: make this more general
         return self.lr * 0.95 ** (self.n_steps / 100)
     
     def softhebb(self, rate=0.001):
@@ -108,6 +119,13 @@ class HebbianOptimizer:
                 self.head.softhebb(rate, adaptive=self.adaptive_lr, p=self.p)
         self.clear_grad()
 
+    def simplesofthebb(self, rate=0.001):
+        self.args.rate = rate
+        with torch.no_grad():
+            for i, layer in enumerate(self.hebbianlayers):
+                layer.simplesofthebb(self.args)
+                #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
+
     def kickback(self, rate=0.001):
         self.args.rate = rate
         with torch.no_grad():
@@ -128,7 +146,9 @@ class HebbianOptimizer:
         self.optim.zero_grad()
     
     def step(self):
-        self.learning_rule(self.schedule())
+        lr = self.schedule()
+        wandb.log({'lr': lr}, commit=False)
+        self.learning_rule(lr)
         self.n_steps += 1
         
     def inc_epoch(self):

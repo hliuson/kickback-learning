@@ -8,6 +8,7 @@ import sys
 import argparse
 import uuid
 import json
+from tqdm import tqdm
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -34,7 +35,7 @@ def run(args):
     epochs = args.epochs
     lr = args.lr
     learning_rule = args.learning_rule
-    assert learning_rule in ['end2end', 'softhebb', 'softmulthebb', 'influencehebb', 'random', 'kickback']
+    assert learning_rule in ['end2end', 'softhebb', 'influencehebb', 'random', 'simplesofthebb']
     
     if learning_rule == 'random':
         epochs = 0
@@ -70,6 +71,8 @@ def run(args):
     norm = None
     if args.norm == 'layer':
         norm = nn.LayerNorm
+        if model_type == 'cnn-1':
+            norm = nn.InstanceNorm2d
     if args.norm == 'batch':
         norm = nn.BatchNorm1d
         if model_type == 'cnn-1':
@@ -156,14 +159,17 @@ def run(args):
 
     opt = HebbianOptimizer(model, lr=lr, learning_rule=learning_rule, supervised=supervised,
                            influencehebb_soft_y=influencehebb_soft_y, influencehebb_soft_z=influencehebb_soft_z, adaptive_lr=args.adaptive_lr, adaptive_lr_p=adaptive_lr_power,
-                           schedule=schedule, influence_type=influence_type, dot_uw=args.dot_uw, temp=args.temp, const_feedback=args.const_feedback)
+                           schedule=schedule, influence_type=influence_type, dot_uw=args.dot_uw, temp=args.temp, const_feedback=args.const_feedback,
+                           exp_avg=args.exp_avg, group_size=args.group_size, shuffle=args.shuffle)
     
 
     last_loss = float('inf')
     for epoch in range(epochs):
         print(f"Epoch {epoch}")
         model.train()
-        for i, (x, y) in enumerate(train):
+        for i, (x, y) in tqdm(enumerate(train)):
+            if i % 100 == 0:
+                show_neurons(model, args)
             x, y = x.to(device), y.to(device)
             y_hat = model(x)
             if supervised:
@@ -197,36 +203,38 @@ def run(args):
             if last_loss < test_loss + 0.001:
                 break
             last_loss = test_loss
-            
-    print('Completed training, now probing')
-    model.head.init_params("xavier", 1)
-    opt = torch.optim.SGD(model.head.parameters(), lr=0.1)
-    model.train()
-    for epoch in range(5):
-        for i, (x, y) in enumerate(train):
-            x, y = x.to(device), y.to(device)
-            y_hat = model(x)
-            loss = F.cross_entropy(y_hat, y)
-            if loss.isnan():
-                raise Exception('Loss is nan')
-            loss.backward(retain_graph=True)
-            opt.step()
-            wandb.log({"probe_loss": loss.item()})
-        
-    test_loss = 0
-    test_acc = 0
-    model.eval()
-    for i, (x, y) in enumerate(test):
-        x, y = x.to(device), y.to(device)
-        y_hat = model(x)
-        loss = F.cross_entropy(y_hat, y)
-        test_loss += loss.item()
-        
-        acc = (y_hat.argmax(dim=1) == y).float().mean()
-        test_acc += acc.item() 
-    test_loss /= len(test)
-    test_acc /= len(test)
-    wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
+    
+    if args.probe:
+        print('Completed training, now probing')
+        model.head.init_params("xavier", 1)
+        opt = torch.optim.AdamW(model.head.parameters())
+        for epoch in tqdm(range(3)):
+            model.train()
+            for i, (x, y) in enumerate(train):
+                x, y = x.to(device), y.to(device)
+                y_hat = model(x)
+                loss = F.cross_entropy(y_hat, y)
+                if loss.isnan():
+                    raise Exception('Loss is nan')
+                loss.backward(retain_graph=True)
+                opt.step()
+                wandb.log({"probe_loss": loss.item()})
+            test_loss = 0
+            test_acc = 0
+            model.eval()
+            for i, (x, y) in enumerate(test):
+                x, y = x.to(device), y.to(device)
+                y_hat = model(x)
+                loss = F.cross_entropy(y_hat, y)
+                test_loss += loss.item()
+                
+                acc = (y_hat.argmax(dim=1) == y).float().mean()
+                test_acc += acc.item() 
+            test_loss /= len(test)
+            test_acc /= len(test)
+            wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
+            print(f"Probe test loss: {test_loss}, Probe test acc: {test_acc}")
+       
     
     if args.save:
         uid = uuid.uuid4()
@@ -234,6 +242,100 @@ def run(args):
         #save args as JSON
         with open(f"models/{wandb.run.name}_{uid}.json", 'w') as f:
             json.dump(vars(args), f)
+    
+    # Select the filter index of the neuron you want to visualize
+    #filter_index = 0
+
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #model.to(device)
+
+    # Visualize the receptive field
+    #layer = model.layers[-1]
+    #input_image = visualize_receptive_field(model, layer, filter_index, device)
+
+    # Plot the image
+    #plt.imshow(input_image)
+    #plt.axis('off')
+    #plt.show()
+
+def show_neurons(model, args):
+    if args.model_type == 'mlp-1': #visualize weights
+        weights = model.layers[0].weight.detach().cpu().numpy()
+        neurons = weights[:25]
+        if args.dataset == 'mnist':
+            neurons = neurons.reshape(25, 28, 28)
+        if args.dataset == 'cifar10':
+            neurons = neurons.reshape(25, 32, 32, 3)
+            #normalize to 0-1 separately for each neuron
+            neurons = (neurons - neurons.min(axis=(1, 2, 3), keepdims=True)) / (neurons.max(axis=(1, 2, 3), keepdims=True) - neurons.min(axis=(1, 2, 3), keepdims=True))
+    if args.model_type == 'cnn-1': #visualize 25 filters
+        neurons = model.layers[0].filter.detach().cpu().numpy() #by default cnn filters are (out, in, h, w)
+        neurons = neurons[:25]
+        if args.dataset == 'mnist':
+            neurons = neurons.transpose(0, 2, 3, 1) #we want (out, h, w, in)
+            neurons = neurons.reshape(25, 3, 3)
+        if args.dataset == 'cifar10':
+            # we want (out, h, w, in)
+            neurons = neurons.transpose(0, 2, 3, 1) 
+            neurons = neurons.reshape(25, 3, 3, 3)
+            #normalize to 0-1 separately for each neuron
+            neurons = (neurons - neurons.min(axis=(1, 2, 3), keepdims=True)) / (neurons.max(axis=(1, 2, 3), keepdims=True) - neurons.min(axis=(1, 2, 3), keepdims=True)) 
+        
+    fig, ax = plt.subplots(5, 5)
+    for i in range(5):
+        for j in range(5):
+            ax[i, j].imshow(neurons[i*5 + j])
+            ax[i, j].axis('off')
+    wandb.log({"neurons": fig})
+    plt.close(fig)
+    
+from torchvision import transforms
+from PIL import Image
+import matplotlib.pyplot as plt
+
+def visualize_receptive_field(model, layer, filter_index, device, num_iterations=100, learning_rate=1e-1, tv_weight=1e-3):
+    model.eval()
+
+    input_image = torch.randn(1, 3, 224, 224, requires_grad=True, device=device)
+    optimizer = torch.optim.Adam([input_image], lr=learning_rate)
+
+    activation = None
+    def store_activation(module, input, output):
+        nonlocal activation
+        activation = output
+
+    hook_handle = layer.register_forward_hook(store_activation)
+
+    for i in range(num_iterations):
+        optimizer.zero_grad()
+        model(input_image)
+        neuron_activation = activation[:, filter_index]
+        loss = -torch.mean(neuron_activation)
+
+        # Add Total Variation regularization
+        tv_reg = tv_weight * (torch.sum(torch.abs(input_image[:, :, 1:, :] - input_image[:, :, :-1, :])) +
+                              torch.sum(torch.abs(input_image[:, :, :, 1:] - input_image[:, :, :, :-1])))
+
+        loss += tv_reg
+        
+        loss.backward()
+        optimizer.step()
+
+        # Clip the input image to maintain values between [0, 1]
+        input_image.data.clamp_(0, 1)
+
+    hook_handle.remove()
+
+    input_image = input_image.detach().squeeze(0).cpu()
+    input_image = (input_image - input_image.min()) / (input_image.max() - input_image.min())
+    input_image = transforms.ToPILImage()(input_image)
+
+    return input_image
+
+
+
+
+
 
 def main(*args, **kwargs):
     parser = argparse.ArgumentParser()
@@ -265,6 +367,10 @@ def main(*args, **kwargs):
     parser.add_argument("--save", type=str2bool, default=False)
     parser.add_argument("--const_feedback", type=str2bool, default=True)
     parser.add_argument("--dropout", type=str2bool, default=False)
+    parser.add_argument("--probe", type=str2bool, default=False)
+    parser.add_argument("--exp_avg", type=float, default=0.95)
+    parser.add_argument("--group_size", type=int, default=-1)
+    parser.add_argument("--shuffle", type=str2bool, default=False)
     
     args = parser.parse_args()
     tags = [args.dataset, args.model_type, args.learning_rule, f"width-{args.model_size}", f"depth-{args.model_depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{args.supervised}"]

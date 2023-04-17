@@ -29,6 +29,14 @@ class InfluenceArgs:
 class KickbackArgs:
     def __init__(self, rate):
         self.rate = rate
+        
+class SimpleSofthebbArgs:
+    def __init__(self, rate, temp, exp_avg=0.95, group_size=-1, shuffle=False):
+        self.rate = rate
+        self.temp = temp
+        self.exp_avg = exp_avg
+        self.group_size = group_size
+        self.shuffle = shuffle
 class HebbianLayer(ABC):
     def __init__(self, next_layer=None):
         self.next = next_layer
@@ -57,17 +65,14 @@ class HebbianLayer(ABC):
     def getnext(self):
         print('getnext called, self.next: ', self.next)
         return self.next
-    
+
+
 def negate_non_maximal(tensor):
-    last_dim = tensor.ndim - 1
-    max_indices = torch.argmax(tensor, dim=last_dim)
-    mask = torch.zeros_like(tensor, dtype=torch.bool)
-    
-    for idx, max_idx in enumerate(max_indices):
-        mask[idx, max_idx] = True
-    
-    negated_tensor = torch.where(mask, tensor, -tensor)
-    return negated_tensor
+    max_indices = torch.argmax(tensor, dim=-1)
+    max_tensor = torch.zeros_like(tensor).scatter_(-1, max_indices.unsqueeze(-1), 1)
+    negated_tensor = -tensor
+    result = torch.where(max_tensor.bool(), tensor, negated_tensor)
+    return result
 
 def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_size=256):
     #batch/patch number is very large so we chunk it
@@ -157,6 +162,8 @@ def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: Hebbian
         influence = influence / (torch.norm(influence, dim=1, keepdim=True) + 1e-8)
         influence = influence.view(-1, influence.shape[1], 1) #shape (b, o, 1)
         
+        wandb.log({'influence': torch.mean(torch.abs(influence))}, commit=False)
+        
         if args.softy:
             y = torch.softmax(y / args.temp, dim=1)
 
@@ -189,6 +196,8 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
             self.act = torch.nn.Identity()
             
         self.feedback = None
+        self.yavg = None
+        self.conscience = torch.zeros(out_dim, device=device)
 
     def init_params(self, init="xavier", init_radius="1"):
         R = init_radius
@@ -226,6 +235,51 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         
         step = _hebb(x, u, y, self.weight, rate, adaptive, p, dot_uw=dot_uw)
         self.weight += step
+    
+    def simplesofthebb(self, args:SofthebbArgs):
+        x = self.x
+        y = self.y
+        if self.yavg is None:
+            self.yavg = torch.mean(y, dim=0)
+        else:
+            self.yavg = args.exp_avg * self.yavg + (1 - args.exp_avg) * torch.mean(y, dim=0)
+        y = y - self.yavg
+        
+        if args.group_size > 1:
+            group_size = args.group_size
+        else:
+            group_size = y.shape[-1]
+        
+        assert y.shape[-1] % group_size == 0
+        
+        if args.shuffle:
+            perm = torch.randperm(y.shape[-1]) 
+            inverse = torch.zeros_like(perm)
+            inverse = inverse.scatter_(0, perm, torch.arange(y.shape[-1]))
+            y = y[:, perm]
+        
+        y = y.view(-1, group_size, y.shape[-1] // group_size)
+        
+        y = F.softmax(y / args.temp, dim=1)
+        y = negate_non_maximal(y)
+        
+        #zero small values
+        zero_thresh = 1 / group_size 
+        y = y * (y > zero_thresh)
+        
+        
+        #reshape back to original shape
+        y = y.view(-1, y.shape[-1] * y.shape[-2])
+        y = y / (torch.sum(y, dim=1, keepdim=True)) #re-normalize across all groups
+        
+        if args.shuffle:
+            y = y[:, inverse]
+    
+        
+        step = torch.matmul(y.t(), x) * args.rate
+        wandb.log({'step': torch.mean(torch.abs(step))}, commit=False)
+        self.weight += step
+        self.weight *= 1/(torch.norm(self.weight, dim=1, keepdim=True) + 1e-8) #force unit norm
     
     def kickback(self, args: KickbackArgs):
         x = self.x
@@ -291,6 +345,7 @@ class HebbianConv2d(torch.nn.Module, HebbianLayer):
         self.act = act
         if act is None:
             self.act = torch.nn.Identity()
+        self.yavg = None
 
     def init_params(self, init="xavier", init_radius="1"):
         R = init_radius
@@ -337,6 +392,59 @@ class HebbianConv2d(torch.nn.Module, HebbianLayer):
         step = _hebb(x, u, y, filter, rate, adaptive, p).view(self.filter.shape)
         self.filter += step
         
+    def simplesofthebb(self, args:SimpleSofthebbArgs):
+        x = F.unfold(self.x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding, dilation=self.dilation)
+        x = x.permute(0, 2, 1) #permute to (b, h*w, i*k*k)
+        x = x.reshape(-1, self.in_channels*self.kernel_size*self.kernel_size) 
+        
+        y = self.y
+         #!!! VERY IMPORTANT. Spatial dimensions must be LEFT of channel dimension before flattening.
+        y = y.permute(0, 3, 2, 1) #permute to (b, o, h, w)
+        y = y.reshape(-1, self.out_channels)
+        
+        if self.yavg is None:
+            self.yavg = torch.mean(y, dim=0)
+        else:
+            self.yavg = args.exp_avg * self.yavg + (1 - args.exp_avg) * torch.mean(y, dim=0)
+        y = y - self.yavg
+        
+        if args.group_size > 1:
+            group_size = args.group_size
+        else:
+            group_size = y.shape[-1]
+        
+        
+        assert y.shape[-1] % group_size == 0
+        
+        if args.shuffle:
+            perm = torch.randperm(y.shape[-1]) 
+            inverse = torch.zeros_like(perm)
+            inverse = inverse.scatter_(0, perm, torch.arange(y.shape[-1]))
+            y = y[:, perm]
+        
+        y = y.view(-1, group_size, y.shape[-1] // group_size)
+        
+        y = F.softmax(y / args.temp, dim=1)
+        y = negate_non_maximal(y)
+        
+        #zero small values
+        zero_thresh = 1 / group_size 
+        y = y * (y > zero_thresh)
+        
+        
+        #reshape back to original shape
+        y = y.view(-1, y.shape[-1] * y.shape[-2])
+        y = y / (torch.sum(y, dim=1, keepdim=True)) #re-normalize across all groups
+        
+        if args.shuffle:
+            y = y[:, inverse]
+    
+        step = torch.matmul(y.t(), x) * args.rate / x.shape[0]
+        step = step.view(self.filter.shape)
+        self.filter += step
+        norm = torch.norm(self.filter.view(-1, x.shape[-1]), dim=1, keepdim=True).view(-1, 1, 1, 1)
+        self.filter *= 1 / norm
+        
     def influencehebb(self, args: InfluenceArgs):
         temp = args.temp
         softz = args.softz
@@ -363,10 +471,18 @@ class HebbianConv2d(torch.nn.Module, HebbianLayer):
             z = F.softmax(z / temp, dim=1) #softmax over output neurons
     
         if influence_type == 'grad':
-            pre = self.y #shape (b, c, h, w)
+            pre = u
             post = self.next.output()
             influence = torch.autograd.grad(post, pre, grad_outputs=z, retain_graph=True)[0]
             influence = F.unfold(influence, kernel_size=1, stride=1, padding=0)
+        if influence_type == 'full_random':
+            influence = torch.randn_like(self.y)
+            influence = influence / influence.norm(dim=1, keepdim=True)
+        if influence_type == 'random': #feedback
+            if self.next.feedback is None:
+                
+                self.next.feedback = torch.rand()
+            influence = torch.matmul(z, self.next.feedback)
         else:
             raise NotImplementedError()
             

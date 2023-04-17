@@ -33,9 +33,10 @@ class MLP1(torch.nn.Module):
                 self.torso.add_module(f'layernorm_{i}', norm)
             #if i == num_layers-1:
                 #self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
-            self.torso.add_module(f'layer_{i}', layer)
-            if dropout and i < num_layers-1:
+            if dropout:
                 self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
+            self.torso.add_module(f'layer_{i}', layer)
+
             
             self.layers += [layer]
             
@@ -124,7 +125,7 @@ class MLPMixer(torch.nn.Module):
 class CNN1(torch.nn.Module):
     def __init__(self, img_dim, img_chan, hidden_chan, out_dim, num_layers,
                  activation=nn.ReLU, normlayer=None, poollayer=None, init=None, init_radius=None,
-                 pool_chan_mult=2) -> None:
+                 pool_chan_mult=4) -> None:
         super().__init__()
         self.torso = torch.nn.Sequential()
         self.layers = []
@@ -138,7 +139,8 @@ class CNN1(torch.nn.Module):
             norm = None
             act = activation()
 
-            if curr_dim % 2 == 0 and curr_dim > 4 and poollayer:
+            #minimum dim of 4x4 since we stop pooling at 8x8
+            if curr_dim % 2 == 0 and curr_dim >= 8 and poollayer:
                 pool = poollayer(2)
                 curr_dim = curr_dim // 2
                 if i != 0:
