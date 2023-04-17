@@ -258,9 +258,10 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
             inverse = inverse.scatter_(0, perm, torch.arange(y.shape[-1]))
             y = y[:, perm]
         
-        y = y.view(-1, group_size, y.shape[-1] // group_size)
+        if group_size > 1:
+            y = y.view(-1, y.shape[-1] // group_size, group_size)
         
-        y = F.softmax(y / args.temp, dim=1)
+        y = F.softmax(y / args.temp, dim=-1)
         y = negate_non_maximal(y)
         
         #zero small values
@@ -269,7 +270,8 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         
         
         #reshape back to original shape
-        y = y.view(-1, y.shape[-1] * y.shape[-2])
+        if group_size > 1:
+            y = y.view(-1, y.shape[-1] * y.shape[-2])
         y = y / (torch.sum(y, dim=1, keepdim=True)) #re-normalize across all groups
         
         if args.shuffle:
@@ -422,9 +424,8 @@ class HebbianConv2d(torch.nn.Module, HebbianLayer):
             inverse = inverse.scatter_(0, perm, torch.arange(y.shape[-1]))
             y = y[:, perm]
         
-        y = y.view(-1, group_size, y.shape[-1] // group_size)
-        
-        y = F.softmax(y / args.temp, dim=1)
+        y = y.view(-1, y.shape[-1] // group_size, group_size)
+        y = F.softmax(y / args.temp, dim=-1)
         y = negate_non_maximal(y)
         
         #zero small values

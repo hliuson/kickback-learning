@@ -48,8 +48,8 @@ def run(**kwargs):
     
     model_type = kwargs.get('model_type', 'mlp-1')
     
-    width = kwargs.get('width', 32)
-    depth = kwargs.get('depth', 2)
+    width = kwargs.get('model_size', 32)
+    depth = kwargs.get('model_depth', 2)
     
     supervised = kwargs.get('supervised', True)
     task = kwargs.get('task', 'classification')
@@ -304,13 +304,13 @@ def show_neurons(model, model_type, dataset):
     
     #if main thread, visualize
         
-    #fig, ax = plt.subplots(5, 5)
-    #for i in range(5):
-    #    for j in range(5):
-    #        ax[i, j].imshow(neurons[i*5 + j])
-    #        ax[i, j].axis('off')
-    #wandb.log({"neurons": fig})
-    #plt.close(fig)
+    fig, ax = plt.subplots(5, 5)
+    for i in range(5):
+        for j in range(5):
+            ax[i, j].imshow(neurons[i*5 + j])
+            ax[i, j].axis('off')
+    wandb.log({"neurons": fig})
+    plt.close(fig)
     
 from torchvision import transforms
 from PIL import Image
