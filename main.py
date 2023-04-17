@@ -237,7 +237,8 @@ def run(**kwargs):
                 loss = F.cross_entropy(y_hat, y)
                 if loss.isnan():
                     raise Exception('Loss is nan')
-                loss.backward(retain_graph=True)
+                opt.zero_grad()
+                loss.backward()
                 opt.step()
                 wandb.log({"probe_loss": loss.item()})
             test_loss = 0

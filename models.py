@@ -33,10 +33,9 @@ class MLP1(torch.nn.Module):
                 self.torso.add_module(f'layernorm_{i}', norm)
             #if i == num_layers-1:
                 #self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
-            if dropout:
-                self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
             self.torso.add_module(f'layer_{i}', layer)
-
+            if dropout and i < num_layers-1:
+                self.torso.add_module(f'dropout_{i}', nn.Dropout(0.5))
             
             self.layers += [layer]
             
