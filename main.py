@@ -259,8 +259,8 @@ def run(**kwargs):
         uid = uuid.uuid4()
         torch.save(model.state_dict(), f"models/{wandb.run.name}_{uid}.pt")
         #save args as JSON
-        with open(f"models/{wandb.run.name}_{uid}.json", 'w') as f:
-            json.dump(vars(args), f)
+        #with open(f"models/{wandb.run.name}_{uid}.json", 'w') as f:
+            #json.dump(vars(kw), f)
     
     # Select the filter index of the neuron you want to visualize
     #filter_index = 0
