@@ -1,0 +1,20 @@
+{
+    "method": "random",
+    "metric": {"goal": "minimize", "name": "probe_loss"},
+    "parameters": {
+        "epochs": {"values": [3]},
+        "batch_size": {"values": [32]},
+        "lr": {"values": [0.1, 0.01, 0.001]},
+        "learning_rule": {"values": ["simplesofthebb"]},
+        "dataset": {"values": ["cifar10"]},
+        "model_size": {"values": [64, 128, 256, 512]},
+        "group_size": {"values": [4, 16, 64, -1]},
+        "shuffle": {"values": [true, false]},
+        "model_depth": {"values": [2, 4, 6]},
+        "model_type": {"values": ["mlp-1"]},
+        "pooling": {"values": ["none", "max", "avg"]},
+        "temp": {"values": [1, 2, 4]},
+        "exp_avg": {"values": [0.5, 0.8, 0.9, 0.99]},
+        "probe": {"values":[true]}
+    }
+}

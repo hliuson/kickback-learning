@@ -31,43 +31,48 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def run(args):    
-    epochs = args.epochs
-    lr = args.lr
-    learning_rule = args.learning_rule
+def run(**kwargs):
+    
+        
+    epochs = kwargs.get('epochs', 10)
+    lr = kwargs.get('lr', 0.1)
+    learning_rule = kwargs.get('learning_rule', 'simplesofthebb')
     assert learning_rule in ['end2end', 'softhebb', 'influencehebb', 'random', 'simplesofthebb']
     
     if learning_rule == 'random':
         epochs = 0
     
-    dataset = args.dataset
+    dataset = kwargs.get('dataset', 'mnist')
     assert dataset in ['mnist', 'cifar10', 'cifar100', 'ms_coco']
     
-    batch_size = args.batch_size
+    batch_size = kwargs.get('batch_size', 32)
     
-    model_type = args.model_type
+    model_type = kwargs.get('model_type', 'mlp-1')
     
-    width = args.model_size
-    depth = args.model_depth
+    width = kwargs.get('width', 32)
+    depth = kwargs.get('depth', 2)
     
-    supervised = args.supervised
-    task = args.task
+    supervised = kwargs.get('supervised', True)
+    task = kwargs.get('task', 'classification')
     
     assert depth >= 2
     
-    influencehebb_soft_y = args.influencehebb_soft_y
-    influencehebb_soft_z = args.influencehebb_soft_z
+    influencehebb_soft_y = kwargs.get('influencehebb_soft_y', True)
+    influencehebb_soft_z = kwargs.get('influencehebb_soft_z', True)
     
-    assert args.activation in ['relu', 'mish', 'triangle']
+    activation = kwargs.get('activation', 'relu')
+    
+    assert activation in ['relu', 'mish', 'triangle']
     act = None
-    if args.activation == 'relu':
+    if activation == 'relu':
         act = nn.ReLU
-    elif args.activation == 'mish':
+    elif activation == 'mish':
         act = nn.Mish
-    elif args.activation == 'triangle':
+    elif activation == 'triangle':
         act = Triangle
-        
-    assert args.norm in [None, 'layer', 'batch']
+    
+    norm = kwargs.get('norm', None)
+    assert norm in [None, 'layer', 'batch']
     norm = None
     if args.norm == 'layer':
         norm = nn.LayerNorm
@@ -78,24 +83,38 @@ def run(args):
         if model_type == 'cnn-1':
             norm = nn.BatchNorm2d
         
-    assert args.init in ['normal', 'positive-uniform', 'xavier']
-    init = args.init
+        
+    init = kwargs.get('init', 'normal')
+    assert init in ['normal', 'positive-uniform', 'xavier']
     
-    assert args.lr_schedule in ['constant', 'exponential']
-    schedule = args.lr_schedule
-    
+    lr_schedule = kwargs.get('lr_schedule', 'constant')
+    assert lr_schedule in ['constant', 'exponential']
+
+    influence_type = kwargs.get('influence_type', 'grad')
     assert args.influence_type in ['simple', 'grad', "one", "random", "full_random"]
-    influence_type = args.influence_type
     
-    assert args.pooling in ['max', 'avg']
-    if args.pooling == 'max':
+    pooling = kwargs.get('pooling', 'max')
+    assert pooling in ['max', 'avg']
+    if pooling == 'max':
         pool = nn.MaxPool2d
-    if args.pooling == 'avg':
+    if pooling == 'avg':
         pool = nn.AvgPool2d
 
-    adaptive_lr_power = args.adaptive_lr_power
+    adaptive_lr_power = kwargs.get('adaptive_lr_power', 0.5)
     
-    name = args.name
+    name = kwargs.get('name', '')
+    R = kwargs.get('R', 5)
+    dot_uw = kwargs.get('dot_uw', False)
+    n_trials = kwargs.get('n_trials', 1)
+    save = kwargs.get('save', False)
+    const_feedback = kwargs.get('const_feedback', False)
+    dropout = kwargs.get('dropout', False)
+    probe = kwargs.get('probe', False)
+    exp_avg = kwargs.get('exp_avg', 0.95)
+    group_size = kwargs.get('group_size', -1)
+    shuffle = kwargs.get('shuffle', False)
+    temp = kwargs.get('temp', 1.0)
+    adaptive_lr = kwargs.get('adaptive_lr', False)
     
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -134,11 +153,11 @@ def run(args):
     
     model = None
     if model_type == 'mlp-1':
-        model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=args.R, dropout=args.dropout)
+        model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=R, dropout=dropout)
     if model_type == 'cnn-1':
-        model = CNN1(img_dim, img_chan, width, mlp_out, depth, activation=act, normlayer=norm, init=init, init_radius=args.R, poollayer=pool)
+        model = CNN1(img_dim, img_chan, width, mlp_out, depth, activation=act, normlayer=norm, init=init, init_radius=R, poollayer=pool)
     if model_type == 'skip-mlp':
-        model = SkipMLP(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=args.R)
+        model = SkipMLP(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=R)
     
     if model is None:
         raise Exception('Model is None')
@@ -158,9 +177,9 @@ def run(args):
         train_until_convergence = False
 
     opt = HebbianOptimizer(model, lr=lr, learning_rule=learning_rule, supervised=supervised,
-                           influencehebb_soft_y=influencehebb_soft_y, influencehebb_soft_z=influencehebb_soft_z, adaptive_lr=args.adaptive_lr, adaptive_lr_p=adaptive_lr_power,
-                           schedule=schedule, influence_type=influence_type, dot_uw=args.dot_uw, temp=args.temp, const_feedback=args.const_feedback,
-                           exp_avg=args.exp_avg, group_size=args.group_size, shuffle=args.shuffle)
+                           influencehebb_soft_y=influencehebb_soft_y, influencehebb_soft_z=influencehebb_soft_z, adaptive_lr=adaptive_lr, adaptive_lr_p=adaptive_lr_power,
+                           schedule=lr_schedule, influence_type=influence_type, dot_uw=dot_uw, temp=temp, const_feedback=const_feedback,
+                           exp_avg=exp_avg, group_size=group_size, shuffle=shuffle)
     
 
     last_loss = float('inf')
@@ -169,7 +188,7 @@ def run(args):
         model.train()
         for i, (x, y) in tqdm(enumerate(train)):
             if i % 100 == 0:
-                show_neurons(model, args)
+                show_neurons(model, model_type, dataset)
             x, y = x.to(device), y.to(device)
             y_hat = model(x)
             if supervised:
@@ -204,7 +223,7 @@ def run(args):
                 break
             last_loss = test_loss
     
-    if args.probe:
+    if probe:
         print('Completed training, now probing')
         model.head.init_params("xavier", 1)
         opt = torch.optim.AdamW(model.head.parameters())
@@ -236,7 +255,7 @@ def run(args):
             print(f"Probe test loss: {test_loss}, Probe test acc: {test_acc}")
        
     
-    if args.save:
+    if save:
         uid = uuid.uuid4()
         torch.save(model.state_dict(), f"models/{wandb.run.name}_{uid}.pt")
         #save args as JSON
@@ -258,23 +277,23 @@ def run(args):
     #plt.axis('off')
     #plt.show()
 
-def show_neurons(model, args):
-    if args.model_type == 'mlp-1': #visualize weights
+def show_neurons(model, model_type, dataset):
+    if model_type == 'mlp-1': #visualize weights
         weights = model.layers[0].weight.detach().cpu().numpy()
         neurons = weights[:25]
-        if args.dataset == 'mnist':
+        if dataset == 'mnist':
             neurons = neurons.reshape(25, 28, 28)
-        if args.dataset == 'cifar10':
+        if dataset == 'cifar10':
             neurons = neurons.reshape(25, 32, 32, 3)
             #normalize to 0-1 separately for each neuron
             neurons = (neurons - neurons.min(axis=(1, 2, 3), keepdims=True)) / (neurons.max(axis=(1, 2, 3), keepdims=True) - neurons.min(axis=(1, 2, 3), keepdims=True))
-    if args.model_type == 'cnn-1': #visualize 25 filters
+    if model_type == 'cnn-1': #visualize 25 filters
         neurons = model.layers[0].filter.detach().cpu().numpy() #by default cnn filters are (out, in, h, w)
         neurons = neurons[:25]
-        if args.dataset == 'mnist':
+        if dataset == 'mnist':
             neurons = neurons.transpose(0, 2, 3, 1) #we want (out, h, w, in)
             neurons = neurons.reshape(25, 3, 3)
-        if args.dataset == 'cifar10':
+        if dataset == 'cifar10':
             # we want (out, h, w, in)
             neurons = neurons.transpose(0, 2, 3, 1) 
             neurons = neurons.reshape(25, 3, 3, 3)
