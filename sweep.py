@@ -1,6 +1,7 @@
 import wandb
 import json
 from main import run
+import traceback
 
 def sweep(): 
     #read in sweep config from json
@@ -11,7 +12,11 @@ def sweep():
 
 def sweeprun():
     wandb.init()
-    run(wandb.config)
+    try:
+        run(**vars(wandb.config))
+    except:
+        traceback.print_exc()
+        
 
 if __name__ == "__main__":
     sweep()

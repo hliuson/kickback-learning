@@ -91,7 +91,7 @@ def run(**kwargs):
     assert lr_schedule in ['constant', 'exponential']
 
     influence_type = kwargs.get('influence_type', 'grad')
-    assert args.influence_type in ['simple', 'grad', "one", "random", "full_random"]
+    assert influence_type in ['simple', 'grad', "one", "random", "full_random"]
     
     pooling = kwargs.get('pooling', 'max')
     assert pooling in ['max', 'avg']
