@@ -13,7 +13,7 @@ def sweep():
 def sweeprun():
     wandb.init()
     try:
-        run(**vars(wandb.config))
+        run(**wandb.config)
     except:
         traceback.print_exc()
         

@@ -32,8 +32,6 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def run(**kwargs):
-    
-        
     epochs = kwargs.get('epochs', 10)
     lr = kwargs.get('lr', 0.1)
     learning_rule = kwargs.get('learning_rule', 'simplesofthebb')
@@ -43,6 +41,7 @@ def run(**kwargs):
         epochs = 0
     
     dataset = kwargs.get('dataset', 'mnist')
+    print(dataset)
     assert dataset in ['mnist', 'cifar10', 'cifar100', 'ms_coco']
     
     batch_size = kwargs.get('batch_size', 32)
@@ -123,7 +122,9 @@ def run(**kwargs):
     print("Using device: ", device)
     
     train = None
+    print("Loading dataset: ", dataset)
     if dataset == 'mnist':
+        print("Loading MNIST dataset")
         train = torch.utils.data.DataLoader(datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
         test = torch.utils.data.DataLoader(datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
         
@@ -133,6 +134,7 @@ def run(**kwargs):
         img_chan = 1
         
     elif dataset == 'cifar10':
+        print("Loading CIFAR10 dataset")
         train = torch.utils.data.DataLoader(datasets.CIFAR10('data', train=True, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
         test = torch.utils.data.DataLoader(datasets.CIFAR10('data', train=False, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
         
