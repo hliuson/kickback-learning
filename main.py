@@ -74,11 +74,11 @@ def run(**kwargs):
     norm = kwargs.get('norm', None)
     assert norm in [None, 'layer', 'batch']
     norm = None
-    if args.norm == 'layer':
+    if norm == 'layer':
         norm = nn.LayerNorm
         if model_type == 'cnn-1':
             norm = nn.InstanceNorm2d
-    if args.norm == 'batch':
+    if norm == 'batch':
         norm = nn.BatchNorm1d
         if model_type == 'cnn-1':
             norm = nn.BatchNorm2d
@@ -402,7 +402,7 @@ def main(*args, **kwargs):
         if args.n_trials > 1:
             postfix += f" | trial {i+1}/{args.n_trials}"
         wandb.init(project="influencehebb", config=args, name=f"{args.dataset} {args.model_type} {args.learning_rule} {args.model_depth}x{args.model_size}{postfix}", tags=tags)
-        run(args)
+        run(**vars(args))
 
 
 if __name__ == '__main__':
