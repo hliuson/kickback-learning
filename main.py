@@ -301,14 +301,16 @@ def show_neurons(model, model_type, dataset):
             neurons = neurons.reshape(25, 3, 3, 3)
             #normalize to 0-1 separately for each neuron
             neurons = (neurons - neurons.min(axis=(1, 2, 3), keepdims=True)) / (neurons.max(axis=(1, 2, 3), keepdims=True) - neurons.min(axis=(1, 2, 3), keepdims=True)) 
+    
+    #if main thread, visualize
         
-    fig, ax = plt.subplots(5, 5)
-    for i in range(5):
-        for j in range(5):
-            ax[i, j].imshow(neurons[i*5 + j])
-            ax[i, j].axis('off')
-    wandb.log({"neurons": fig})
-    plt.close(fig)
+    #fig, ax = plt.subplots(5, 5)
+    #for i in range(5):
+    #    for j in range(5):
+    #        ax[i, j].imshow(neurons[i*5 + j])
+    #        ax[i, j].axis('off')
+    #wandb.log({"neurons": fig})
+    #plt.close(fig)
     
 from torchvision import transforms
 from PIL import Image
