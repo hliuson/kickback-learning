@@ -172,7 +172,7 @@ def _simplehebb(self:HebbianLayer, args:SimpleSofthebbArgs, x, y, influence=None
             y = y[:, inverse]
         
         step = torch.matmul(y.t(), x) * args.rate
-        wandb.log({'step': torch.mean(torch.abs(step))}, commit=False)
+        wandb.log({'log/step': torch.mean(torch.abs(step))}, commit=False)
         return step
 
 def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: HebbianLayer, next: HebbianLayer, args: InfluenceArgs):
