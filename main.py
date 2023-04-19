@@ -253,24 +253,8 @@ def run(**kwargs):
     if save:
         uid = uuid.uuid4()
         torch.save(model.state_dict(), f"models/{wandb.run.name}_{uid}.pt")
-        #save args as JSON
-        #with open(f"models/{wandb.run.name}_{uid}.json", 'w') as f:
-            #json.dump(vars(kw), f)
-    
-    # Select the filter index of the neuron you want to visualize
-    #filter_index = 0
 
-    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #model.to(device)
-
-    # Visualize the receptive field
-    #layer = model.layers[-1]
-    #input_image = visualize_receptive_field(model, layer, filter_index, device)
-
-    # Plot the image
-    #plt.imshow(input_image)
-    #plt.axis('off')
-    #plt.show()
+    return model
 
 def show_neurons(model, model_type, dataset):
     if model_type == 'mlp-1': #visualize weights
@@ -295,8 +279,6 @@ def show_neurons(model, model_type, dataset):
             #normalize to 0-1 separately for each neuron
             neurons = (neurons - neurons.min(axis=(1, 2, 3), keepdims=True)) / (neurons.max(axis=(1, 2, 3), keepdims=True) - neurons.min(axis=(1, 2, 3), keepdims=True)) 
     
-    #if main thread, visualize
-        
     fig, ax = plt.subplots(5, 5)
     for i in range(5):
         for j in range(5):
