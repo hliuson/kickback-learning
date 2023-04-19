@@ -225,6 +225,7 @@ def run(**kwargs):
         uid = uuid.uuid4()
         torch.save(model.state_dict(), f"models/{wandb.run.name}_{uid}.pt")
 
+    wandb.finish()
     return model, train, test, device
 
 def linear_probe(device, train, test, model):
@@ -257,11 +258,11 @@ def linear_probe(device, train, test, model):
             test_acc += acc.item() 
         test_loss /= len(test)
         test_acc /= len(test)
-        wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
         print(f"Probe test loss: {test_loss}, Probe test acc: {test_acc}")
         
         if last_loss < test_loss + 0.001:
             print('Probe converged')
+            wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
             return
         else:
             last_loss = test_loss
@@ -278,11 +279,10 @@ def reinit(model, p=0.5):
 def reinit_and_probe(device, train, test, model, p_increments=10):
     for i in range(p_increments+1):
         p = i / p_increments
+        wandb.log({"p": p})
         print(f'Reinitializing {p*100}% of neurons')
         reinit(model, p)
         reinit_and_probe(device, train, test, model, p_increments)
-        
-    
 
 def show_neurons(model, model_type, dataset):
     if model_type == 'mlp-1': #visualize weights
