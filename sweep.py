@@ -8,7 +8,7 @@ def sweep():
     sweep_config = json.load(open('./sweepcfg/simplesofthebb_sweep.json', 'r'))
     print(sweep_config)
     sweep_id = wandb.sweep(sweep_config, project="influencehebb")
-    wandb.agent(sweep_id, function=sweeprun, count=256)
+    wandb.agent(sweep_id, function=sweeprun, count=64)
 
 def sweeprun():
     wandb.init()

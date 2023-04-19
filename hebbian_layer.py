@@ -5,6 +5,7 @@ import wandb
 import torch.nn.functional as F
 from abc import ABC, abstractmethod
 
+DEAD_THRESHOLD = 0.0001 #veeery low. This is 1e-4
 class SofthebbArgs:
     def __init__(self, rate, adaptive, p, influence=None, dot_uw=False, temp=1):
         self.rate = rate
@@ -129,6 +130,51 @@ def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_
     wandb.log({'log/stepnorm': torch.mean(torch.norm(step, dim=1))}, commit=False)
     return step
 
+def _simplehebb(self:HebbianLayer, args:SimpleSofthebbArgs, x, y, influence=None):
+        if self.yavg is None:
+            self.yavg = torch.mean(y, dim=0)
+        else:
+            self.yavg = args.exp_avg * self.yavg + (1 - args.exp_avg) * torch.mean(y, dim=0)
+        y = y - self.yavg
+        if influence is not None: #Influence measures the importance of the neuron wrt downstream activations.
+            y = y * influence
+        
+        if args.group_size > 1:
+            group_size = args.group_size
+        else:
+            group_size = y.shape[-1]
+        
+        assert y.shape[-1] % group_size == 0
+        
+        if args.shuffle:
+            perm = torch.randperm(y.shape[-1]) 
+            inverse = torch.zeros_like(perm)
+            inverse = inverse.scatter_(0, perm, torch.arange(y.shape[-1]))
+            y = y[:, perm]
+        
+        if group_size > 1:
+            y = y.view(-1, y.shape[-1] // group_size, group_size)
+        
+        y = F.softmax(y / args.temp, dim=-1)
+        y = negate_non_maximal(y)
+        
+        #zero small values
+        zero_thresh = 1 / group_size 
+        y = y * (y > zero_thresh)
+        
+        
+        #reshape back to original shape
+        if group_size > 1:
+            y = y.view(-1, y.shape[-1] * y.shape[-2])
+        y = y / (torch.sum(y, dim=1, keepdim=True)) #re-normalize across all groups
+        
+        if args.shuffle:
+            y = y[:, inverse]
+        
+        step = torch.matmul(y.t(), x) * args.rate
+        wandb.log({'step': torch.mean(torch.abs(step))}, commit=False)
+        return step
+
 def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: HebbianLayer, next: HebbianLayer, args: InfluenceArgs):
         influence_type = args.influence_type
             
@@ -198,6 +244,7 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         self.feedback = None
         self.yavg = None
         self.conscience = torch.zeros(out_dim, device=device)
+        self.displacement = torch.zeros_like(self.weight)
 
     def init_params(self, init="xavier", init_radius="1"):
         R = init_radius
@@ -234,54 +281,47 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         y = F.softmax(self.y / temp, dim=1)
         
         step = _hebb(x, u, y, self.weight, rate, adaptive, p, dot_uw=dot_uw)
+        norm = torch.norm(step, dim=1, keepdim=False) 
+        assert norm.shape == (self.out_dim,)
+        self.conscience = self.conscience * (0.99) + norm * (0.01) #exponential moving average
+        wandb.log({'log/conscience': self.conscience}, commit=False)
+        mean = torch.mean(self.conscience, dim=0)
+        sigma = torch.std(self.conscience, dim=0)
+        skew = torch.mean(((self.conscience - mean) / sigma) ** 3, dim=0)
+        wandb.log({'log/skewness': skew}, commit=False)
+        
+        #weight variance
+        wandb.log({'log/weight_variance': torch.var(self.weight, dim=0)}, commit=False)
+        
+        
         self.weight += step
+        self.displacement += step
+        # log displacement taxicab distance
+        wandb.log({'log/displacement': torch.mean(torch.abs(self.displacement))}, commit=False)
     
-    def simplesofthebb(self, args:SofthebbArgs):
+    def simplesofthebb(self, args:SimpleSofthebbArgs):
         x = self.x
         y = self.y
-        if self.yavg is None:
-            self.yavg = torch.mean(y, dim=0)
-        else:
-            self.yavg = args.exp_avg * self.yavg + (1 - args.exp_avg) * torch.mean(y, dim=0)
-        y = y - self.yavg
         
-        if args.group_size > 1:
-            group_size = args.group_size
-        else:
-            group_size = y.shape[-1]
-        
-        assert y.shape[-1] % group_size == 0
-        
-        if args.shuffle:
-            perm = torch.randperm(y.shape[-1]) 
-            inverse = torch.zeros_like(perm)
-            inverse = inverse.scatter_(0, perm, torch.arange(y.shape[-1]))
-            y = y[:, perm]
-        
-        if group_size > 1:
-            y = y.view(-1, y.shape[-1] // group_size, group_size)
-        
-        y = F.softmax(y / args.temp, dim=-1)
-        y = negate_non_maximal(y)
-        
-        #zero small values
-        zero_thresh = 1 / group_size 
-        y = y * (y > zero_thresh)
+        step = _simplehebb(self, args, x, y)
         
         
-        #reshape back to original shape
-        if group_size > 1:
-            y = y.view(-1, y.shape[-1] * y.shape[-2])
-        y = y / (torch.sum(y, dim=1, keepdim=True)) #re-normalize across all groups
+        norm = torch.norm(step, dim=1, keepdim=False) 
+        assert norm.shape == (self.out_dim,)
+        self.conscience = self.conscience * (0.99) + norm * (0.01) #exponential moving average
+        wandb.log({'log/conscience': self.conscience}, commit=False)
+        mean = torch.mean(self.conscience, dim=0)
+        sigma = torch.std(self.conscience, dim=0)
+        skew = torch.mean(((self.conscience - mean) / sigma) ** 3, dim=0)
+        wandb.log({'log/skewness': skew}, commit=False)
         
-        if args.shuffle:
-            y = y[:, inverse]
-    
+        #weight variance
+        wandb.log({'log/weight_variance': torch.var(self.weight, dim=0)}, commit=False)
         
-        step = torch.matmul(y.t(), x) * args.rate
-        wandb.log({'step': torch.mean(torch.abs(step))}, commit=False)
+        
         self.weight += step
-        self.weight *= 1/(torch.norm(self.weight, dim=1, keepdim=True) + 1e-8) #force unit norm
+        self.weight *= 1/(torch.norm(self.weight, dim=1, keepdim=True)) 
+        #force unit norm
     
     def kickback(self, args: KickbackArgs):
         x = self.x

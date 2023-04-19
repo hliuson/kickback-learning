@@ -4,7 +4,7 @@ from hebbian_layer import *
 class HebbianOptimizer:
     def __init__(self, model, lr=0.001, learning_rule='softhebb', supervised=True, influencehebb_soft_y=True,
                  influencehebb_soft_z=True, adaptive_lr=False, adaptive_lr_p=1, schedule=None, influence_type='simple',
-                 dot_uw=False, temp=1, const_feedback=False, exp_avg=0.95, group_size=-1, shuffle=False):
+                 dot_uw=False, temp=1, const_feedback=False, exp_avg=0.95, group_size=-1, shuffle=False, sequentialTraining=False):
         self.model = model
         self.lr = lr
         self.hebbianlayers = model.layers
@@ -66,7 +66,7 @@ class HebbianOptimizer:
             
         self.supervised = supervised
         if supervised and not learning_rule == 'end2end':
-            self.optim = torch.optim.SGD(self.head.parameters(), lr=1)
+            self.optim = torch.optim.AdamW(self.head.parameters())
         if supervised and learning_rule == 'end2end':
             self.optim = torch.optim.AdamW(self.model.parameters())
             
@@ -85,6 +85,7 @@ class HebbianOptimizer:
         
         self.epoch = 0
         self.n_steps = 0
+        self.sequentialTraining = sequentialTraining
         
     def const_schedule(self):
         return self.lr
@@ -123,8 +124,15 @@ class HebbianOptimizer:
         self.args.rate = rate
         with torch.no_grad():
             for i, layer in enumerate(self.hebbianlayers):
-                layer.simplesofthebb(self.args)
+                if self.sequentialTraining:
+                    if self.epoch == i: #train each layer sequentially for one epoch
+                        layer.simplesofthebb(self.args)
+                else:
+                    layer.simplesofthebb(self.args)
                 #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
+        if self.supervised:
+            self.optim.step()
+        self.clear_grad()
 
     def kickback(self, rate=0.001):
         self.args.rate = rate

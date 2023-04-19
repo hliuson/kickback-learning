@@ -123,10 +123,12 @@ def run(**kwargs):
     
     train = None
     print("Loading dataset: ", dataset)
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+    
     if dataset == 'mnist':
         print("Loading MNIST dataset")
-        train = torch.utils.data.DataLoader(datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
-        test = torch.utils.data.DataLoader(datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
+        train = torch.utils.data.DataLoader(datasets.MNIST('data', train=True, download=True, transform=transform), batch_size=batch_size, shuffle=True)
+        test = torch.utils.data.DataLoader(datasets.MNIST('data', train=False, download=True, transform=transform), batch_size=batch_size, shuffle=True)
         
         mlp_in = 784
         mlp_out = 10
@@ -135,23 +137,13 @@ def run(**kwargs):
         
     elif dataset == 'cifar10':
         print("Loading CIFAR10 dataset")
-        train = torch.utils.data.DataLoader(datasets.CIFAR10('data', train=True, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
-        test = torch.utils.data.DataLoader(datasets.CIFAR10('data', train=False, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
+        train = torch.utils.data.DataLoader(datasets.CIFAR10('data', train=True, download=True, transform=transform), batch_size=batch_size, shuffle=True)
+        test = torch.utils.data.DataLoader(datasets.CIFAR10('data', train=False, download=True, transform=transform), batch_size=batch_size, shuffle=True)
         
         mlp_in = 3072
         mlp_out = 10
         img_dim = 32
         img_chan = 3
-    elif dataset == 'cifar100':
-        train = torch.utils.data.DataLoader(datasets.CIFAR100('data', train=True, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
-        test = torch.utils.data.DataLoader(datasets.CIFAR100('data', train=False, download=True, transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
-        
-        mlp_in = 3072
-        mlp_out = 100       
-    elif dataset == 'ms_coco':
-        if task == 'classification':
-            train = torch.utils.data.DataLoader(datasets.CocoDetection('data', 'train2017', transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
-            test = torch.utils.data.DataLoader(datasets.CocoDetection('data', 'val2017', transform=transforms.ToTensor()), batch_size=batch_size, shuffle=True)
     
     model = None
     if model_type == 'mlp-1':
@@ -189,10 +181,10 @@ def run(**kwargs):
         print(f"Epoch {epoch}")
         model.train()
         for i, (x, y) in tqdm(enumerate(train)):
-            if i % 100 == 0:
-                show_neurons(model, model_type, dataset)
             x, y = x.to(device), y.to(device)
             y_hat = model(x)
+            if i % 100 == 0:
+                show_neurons(model, model_type, dataset)
             if supervised:
                 loss = F.cross_entropy(y_hat, y)
                 if loss.isnan():
