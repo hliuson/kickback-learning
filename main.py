@@ -218,7 +218,7 @@ def run(**kwargs):
             last_loss = test_loss
     
     if probe:
-        reinit_and_probe(device, train, test, model)
+        linear_probe(device, train, test, model)
        
     
     if save:
@@ -231,7 +231,7 @@ def linear_probe(device, train, test, model):
     model.head.init_params("xavier", 1)
     opt = torch.optim.AdamW(model.head.parameters())
     last_loss = float('inf')
-    for epoch in tqdm(range(1000)):
+    for epoch in range(10): #max 10 epochs
         model.train()
         for i, (x, y) in enumerate(train):
             x, y = x.to(device), y.to(device)
@@ -266,13 +266,14 @@ def linear_probe(device, train, test, model):
             last_loss = test_loss
         
 def reinit(model, p=0.5):
-    layer = model.layers[0]
-    #reinit first p% of neurons
-    n = int(layer.weight.shape[0] * p)
-    new_weights = torch.randn(n, layer.weight.shape[1])
-    #xavier init 
-    new_weights = torch.nn.init.xavier_uniform_(new_weights)
-    layer.weight[:n] = new_weights
+    with torch.no_grad():
+        layer = model.layers[0]
+        #reinit first p% of neurons
+        n = int(layer.weight.shape[0] * p)
+        new_weights = torch.randn(n, layer.weight.shape[1])
+        #xavier init 
+        new_weights = torch.nn.init.xavier_uniform_(new_weights)
+        layer.weight[:n] = new_weights
     
 def reinit_and_probe(device, train, test, model, p_increments=10):
     for i in range(p_increments+1):
@@ -280,7 +281,7 @@ def reinit_and_probe(device, train, test, model, p_increments=10):
         wandb.log({"reinit_p": p})
         print(f'Reinitializing {p*100}% of neurons')
         reinit(model, p)
-        reinit_and_probe(device, train, test, model, p_increments)
+        linear_probe(device, train, test, model)
 
 def show_neurons(model, model_type, dataset):
     if model_type == 'mlp-1': #visualize weights
