@@ -218,43 +218,71 @@ def run(**kwargs):
             last_loss = test_loss
     
     if probe:
-        print('Completed training, now probing')
-        model.head.init_params("xavier", 1)
-        opt = torch.optim.AdamW(model.head.parameters())
-        for epoch in tqdm(range(3)):
-            model.train()
-            for i, (x, y) in enumerate(train):
-                x, y = x.to(device), y.to(device)
-                y_hat = model(x)
-                loss = F.cross_entropy(y_hat, y)
-                if loss.isnan():
-                    raise Exception('Loss is nan')
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-                wandb.log({"probe_loss": loss.item()})
-            test_loss = 0
-            test_acc = 0
-            model.eval()
-            for i, (x, y) in enumerate(test):
-                x, y = x.to(device), y.to(device)
-                y_hat = model(x)
-                loss = F.cross_entropy(y_hat, y)
-                test_loss += loss.item()
-                
-                acc = (y_hat.argmax(dim=1) == y).float().mean()
-                test_acc += acc.item() 
-            test_loss /= len(test)
-            test_acc /= len(test)
-            wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
-            print(f"Probe test loss: {test_loss}, Probe test acc: {test_acc}")
+        linear_probe(device, train, test, model)
        
     
     if save:
         uid = uuid.uuid4()
         torch.save(model.state_dict(), f"models/{wandb.run.name}_{uid}.pt")
 
-    return model
+    return model, train, test, device
+
+def linear_probe(device, train, test, model):
+    print('Completed training, now probing')
+    model.head.init_params("xavier", 1)
+    opt = torch.optim.AdamW(model.head.parameters())
+    last_loss = float('inf')
+    for epoch in tqdm(range(1000)):
+        model.train()
+        for i, (x, y) in enumerate(train):
+            x, y = x.to(device), y.to(device)
+            y_hat = model(x)
+            loss = F.cross_entropy(y_hat, y)
+            if loss.isnan():
+                raise Exception('Loss is nan')
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            wandb.log({"probe_loss": loss.item()})
+        test_loss = 0
+        test_acc = 0
+        model.eval()
+        for i, (x, y) in enumerate(test):
+            x, y = x.to(device), y.to(device)
+            y_hat = model(x)
+            loss = F.cross_entropy(y_hat, y)
+            test_loss += loss.item()
+                
+            acc = (y_hat.argmax(dim=1) == y).float().mean()
+            test_acc += acc.item() 
+        test_loss /= len(test)
+        test_acc /= len(test)
+        wandb.log({"probe_test_loss": test_loss, "probe_test_acc": test_acc})
+        print(f"Probe test loss: {test_loss}, Probe test acc: {test_acc}")
+        
+        if last_loss < test_loss + 0.001:
+            print('Probe converged')
+            return
+        else:
+            last_loss = test_loss
+        
+def reinit(model, p=0.5):
+    layer = model.layers[0]
+    #reinit first p% of neurons
+    n = int(layer.weight.shape[0] * p)
+    new_weights = torch.randn(n, layer.weight.shape[1])
+    #xavier init 
+    new_weights = torch.nn.init.xavier_uniform_(new_weights)
+    layer.weight[:n] = new_weights
+    
+def reinit_and_probe(device, train, test, model, p_increments=10):
+    for i in range(p_increments+1):
+        p = i / p_increments
+        print(f'Reinitializing {p*100}% of neurons')
+        reinit(model, p)
+        reinit_and_probe(device, train, test, model, p_increments)
+        
+    
 
 def show_neurons(model, model_type, dataset):
     if model_type == 'mlp-1': #visualize weights
