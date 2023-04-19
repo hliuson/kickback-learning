@@ -296,8 +296,8 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         
         self.weight += step
         self.displacement += step
-        # log displacement taxicab distance
-        wandb.log({'log/displacement': torch.mean(torch.abs(self.displacement))}, commit=False)
+        # log displacement taxicab distance per neuron
+        wandb.log({'log/displacement': torch.mean(torch.abs(self.displacement), dim=1)}, commit=False)
     
     def simplesofthebb(self, args:SimpleSofthebbArgs):
         x = self.x

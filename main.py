@@ -218,7 +218,7 @@ def run(**kwargs):
             last_loss = test_loss
     
     if probe:
-        reinit_and_probe(model, train, test, device)
+        reinit_and_probe(device, train, test, model)
        
     
     if save:
