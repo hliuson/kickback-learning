@@ -218,15 +218,13 @@ def run(**kwargs):
             last_loss = test_loss
     
     if probe:
-        linear_probe(device, train, test, model)
+        reinit_and_probe(model, train, test, device)
        
     
     if save:
         uid = uuid.uuid4()
         torch.save(model.state_dict(), f"models/{wandb.run.name}_{uid}.pt")
 
-    wandb.finish()
-    return model, train, test, device
 
 def linear_probe(device, train, test, model):
     print('Completed training, now probing')
@@ -279,7 +277,7 @@ def reinit(model, p=0.5):
 def reinit_and_probe(device, train, test, model, p_increments=10):
     for i in range(p_increments+1):
         p = i / p_increments
-        wandb.log({"p": p})
+        wandb.log({"reinit_p": p})
         print(f'Reinitializing {p*100}% of neurons')
         reinit(model, p)
         reinit_and_probe(device, train, test, model, p_increments)
