@@ -35,7 +35,6 @@ def run(**kwargs):
     epochs = kwargs.get('epochs', 10)
     lr = kwargs.get('lr', 0.1)
     learning_rule = kwargs.get('learning_rule', 'simplesofthebb')
-    assert learning_rule in ['end2end', 'softhebb', 'influencehebb', 'random', 'simplesofthebb']
     
     if learning_rule == 'random':
         epochs = 0
@@ -114,6 +113,8 @@ def run(**kwargs):
     shuffle = kwargs.get('shuffle', False)
     temp = kwargs.get('temp', 1.0)
     adaptive_lr = kwargs.get('adaptive_lr', False)
+    exp_lr_decay = kwargs.get('exp_lr_decay', 1.0)
+    sequential_train = kwargs.get('sequential_train', False)
     
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -169,11 +170,17 @@ def run(**kwargs):
         epochs = 1000000
     else:
         train_until_convergence = False
+        
+    epochs_per_layer = -1 
+    if sequential_train:
+        assert not train_until_convergence, "Sequential training only works with a fixed number of epochs"
+        assert epochs % (depth-1) == 0, "Number of epochs must be divisible by the number of layers"
+        epochs_per_layer = epochs // (depth-1)
 
     opt = HebbianOptimizer(model, lr=lr, learning_rule=learning_rule, supervised=supervised,
                            influencehebb_soft_y=influencehebb_soft_y, influencehebb_soft_z=influencehebb_soft_z, adaptive_lr=adaptive_lr, adaptive_lr_p=adaptive_lr_power,
                            schedule=lr_schedule, influence_type=influence_type, dot_uw=dot_uw, temp=temp, const_feedback=const_feedback,
-                           exp_avg=exp_avg, group_size=group_size, shuffle=shuffle)
+                           exp_avg=exp_avg, group_size=group_size, shuffle=shuffle, exp_base=exp_lr_decay, epochs_per_layer=epochs_per_layer)
     
 
     last_loss = float('inf')
@@ -286,7 +293,13 @@ def reinit_and_probe(device, train, test, model, p_increments=10):
 def show_neurons(model, model_type, dataset):
     if model_type == 'mlp-1': #visualize weights
         weights = model.layers[0].weight.detach().cpu().numpy()
-        neurons = weights[:25]
+        no_neurons = weights.shape[0]
+        if no_neurons >= 25:
+            neurons = weights[:25]
+        else: #pad with zeros
+            neurons = np.zeros((25, weights.shape[1]))
+            neurons[:no_neurons] = weights
+            
         if dataset == 'mnist':
             neurons = neurons.reshape(25, 28, 28)
         if dataset == 'cifar10':
@@ -396,6 +409,8 @@ def main(*args, **kwargs):
     parser.add_argument("--exp_avg", type=float, default=0.95)
     parser.add_argument("--group_size", type=int, default=-1)
     parser.add_argument("--shuffle", type=str2bool, default=False)
+    parser.add_argument("--exp_lr_decay", type=float, default=1.0)
+    parser.add_argument("--sequential_train", type=str2bool, default=False)
     
     args = parser.parse_args()
     tags = [args.dataset, args.model_type, args.learning_rule, f"width-{args.model_size}", f"depth-{args.model_depth}", f"norm-{args.norm}", f"act-{args.activation}", f"supervised-{args.supervised}"]

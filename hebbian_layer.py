@@ -38,6 +38,12 @@ class SimpleSofthebbArgs:
         self.exp_avg = exp_avg
         self.group_size = group_size
         self.shuffle = shuffle
+        
+class HebbnetArgs:
+    def __init__(self, rate, exp_avg, sparsity):
+        self.rate = rate
+        self.exp_avg = exp_avg
+        self.sparsity = sparsity
 class HebbianLayer(ABC):
     def __init__(self, next_layer=None):
         self.next = next_layer
@@ -74,6 +80,7 @@ def negate_non_maximal(tensor):
     negated_tensor = -tensor
     result = torch.where(max_tensor.bool(), tensor, negated_tensor)
     return result
+
 
 def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_size=256):
     #batch/patch number is very large so we chunk it
@@ -136,44 +143,40 @@ def _simplehebb(self:HebbianLayer, args:SimpleSofthebbArgs, x, y, influence=None
         else:
             self.yavg = args.exp_avg * self.yavg + (1 - args.exp_avg) * torch.mean(y, dim=0)
         y = y - self.yavg
-        if influence is not None: #Influence measures the importance of the neuron wrt downstream activations.
-            y = y * influence
-        
-        if args.group_size > 1:
-            group_size = args.group_size
-        else:
-            group_size = y.shape[-1]
-        
-        assert y.shape[-1] % group_size == 0
-        
-        if args.shuffle:
-            perm = torch.randperm(y.shape[-1]) 
-            inverse = torch.zeros_like(perm)
-            inverse = inverse.scatter_(0, perm, torch.arange(y.shape[-1]))
-            y = y[:, perm]
-        
-        if group_size > 1:
-            y = y.view(-1, y.shape[-1] // group_size, group_size)
         
         y = F.softmax(y / args.temp, dim=-1)
         y = negate_non_maximal(y)
         
         #zero small values
-        zero_thresh = 1 / group_size 
+        zero_thresh = 1 / y.shape[-1] 
         y = y * (y > zero_thresh)
-        
-        
-        #reshape back to original shape
-        if group_size > 1:
-            y = y.view(-1, y.shape[-1] * y.shape[-2])
-        y = y / (torch.sum(y, dim=1, keepdim=True)) #re-normalize across all groups
-        
-        if args.shuffle:
-            y = y[:, inverse]
-        
         step = torch.matmul(y.t(), x) * args.rate
         wandb.log({'log/step': torch.mean(torch.abs(step))}, commit=False)
         return step
+    
+def sparsify(tensor, p):
+    """
+    Zero out the lowest p fraction of a PyTorch tensor by magnitude along specified dimensions.
+
+    Args:
+        tensor (torch.Tensor): Input tensor.
+        p (float): Fraction of values to zero out (0 <= p <= 1).
+        dim (int or tuple): Dimension(s) along which to zero out the lowest values.
+                            If None, the operation is performed on the entire tensor.
+
+    Returns:
+        torch.Tensor: Tensor with the lowest p fraction of values zeroed out.
+    """
+    if not 0 <= p <= 1:
+        raise ValueError("p must be between 0 and 1")
+
+    if p == 0:
+        return tensor
+
+    threshold = torch.quantile(tensor.abs(), p, dim=-1, keepdim=True)
+    zero_mask = (tensor.abs() < threshold)
+    return tensor * ~zero_mask, ~zero_mask
+    
 
 def _influencehebb(x: torch.Tensor,u:torch.Tensor,y: torch.Tensor, self: HebbianLayer, next: HebbianLayer, args: InfluenceArgs):
         influence_type = args.influence_type
@@ -244,6 +247,7 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         self.feedback = None
         self.yavg = None
         self.conscience = torch.zeros(out_dim, device=device)
+        self.step = 0
         self.displacement = torch.zeros_like(self.weight)
 
     def init_params(self, init="xavier", init_radius="1"):
@@ -281,23 +285,38 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         y = F.softmax(self.y / temp, dim=1)
         
         step = _hebb(x, u, y, self.weight, rate, adaptive, p, dot_uw=dot_uw)
-        norm = torch.norm(step, dim=1, keepdim=False) 
-        assert norm.shape == (self.out_dim,)
-        self.conscience = self.conscience * (0.99) + norm * (0.01) #exponential moving average
-        wandb.log({'log/conscience': self.conscience}, commit=False)
-        mean = torch.mean(self.conscience, dim=0)
-        sigma = torch.std(self.conscience, dim=0)
-        skew = torch.mean(((self.conscience - mean) / sigma) ** 3, dim=0)
-        wandb.log({'log/skewness': skew}, commit=False)
-        
-        #weight variance
-        wandb.log({'log/weight_variance': torch.var(self.weight, dim=0)}, commit=False)
-        
-        
         self.weight += step
-        self.displacement += step
-        # log displacement taxicab distance per neuron
-        wandb.log({'log/displacement': torch.mean(torch.abs(self.displacement), dim=1)}, commit=False)
+        
+        self.logstats(step)
+    def hebbnet(self, args: HebbnetArgs):
+        x = self.x
+        y = self.y
+        
+        alpha = args.exp_avg
+        
+        if self.yavg is None:
+            self.yavg = torch.mean(y, dim=0)
+        else:
+            self.yavg = self.yavg * (1 - alpha) + torch.mean(y, dim=0) * alpha
+        y = y - self.yavg
+        
+        step = torch.matmul(y.t(), x)
+        stepsize = torch.norm(step, dim=1)
+        _, mask = sparsify(stepsize, args.sparsity)
+        mask = mask.view(-1, 1)
+        step = step * mask
+        step = step * args.rate
+        
+        stepsize = negate_non_maximal(stepsize)
+        sign = torch.sign(stepsize)
+        step = step * sign.view(-1, 1)
+
+        self.weight += step
+        
+        norm = torch.norm(self.weight, dim=1, keepdim=False)
+        self.weight /= norm.view(-1, 1)
+        
+        self.logstats(step)
     
     def simplesofthebb(self, args:SimpleSofthebbArgs):
         x = self.x
@@ -306,22 +325,12 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
         step = _simplehebb(self, args, x, y)
         
         
-        norm = torch.norm(step, dim=1, keepdim=False) 
-        assert norm.shape == (self.out_dim,)
-        self.conscience = self.conscience * (0.99) + norm * (0.01) #exponential moving average
-        wandb.log({'log/conscience': self.conscience}, commit=False)
-        mean = torch.mean(self.conscience, dim=0)
-        sigma = torch.std(self.conscience, dim=0)
-        skew = torch.mean(((self.conscience - mean) / sigma) ** 3, dim=0)
-        wandb.log({'log/skewness': skew}, commit=False)
-        
-        #weight variance
-        wandb.log({'log/weight_variance': torch.var(self.weight, dim=0)}, commit=False)
-        
-        
         self.weight += step
         self.weight *= 1/(torch.norm(self.weight, dim=1, keepdim=True)) 
         #force unit norm
+        
+        
+        self.logstats(step)
     
     def kickback(self, args: KickbackArgs):
         x = self.x
@@ -364,8 +373,19 @@ class HebbianLinear(torch.nn.Module, HebbianLayer):
     
     def getweight(self):
         return self.weight
+    
+    def logstats(self, step): #step has shape (o, i)
+        norm = torch.norm(step, dim=1, keepdim=False)
+        self.conscience = ((self.conscience * self.step) + norm) / (self.step + 1)
+        self.step += 1
+        wandb.log({'log/conscience': self.conscience}, commit=False)
+        wandb.log({'log/gini': gini(self.conscience)}, commit=False)
         
-        
+def gini(x):
+    total = 0
+    for i, xi in enumerate(x[:-1], 1):
+        total += torch.sum(torch.abs(xi - x[i:]))
+    return total / (x.shape[0] ** 2 * torch.mean(x))    
        
 #custom implementation of convolutional layer
 class HebbianConv2d(torch.nn.Module, HebbianLayer):

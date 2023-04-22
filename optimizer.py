@@ -4,11 +4,14 @@ from hebbian_layer import *
 class HebbianOptimizer:
     def __init__(self, model, lr=0.001, learning_rule='softhebb', supervised=True, influencehebb_soft_y=True,
                  influencehebb_soft_z=True, adaptive_lr=False, adaptive_lr_p=1, schedule=None, influence_type='simple',
-                 dot_uw=False, temp=1, const_feedback=False, exp_avg=0.95, group_size=-1, shuffle=False, sequentialTraining=False):
+                 dot_uw=False, temp=1, const_feedback=False, exp_avg=0.95, group_size=-1, shuffle=False, sequentialTraining=False,
+                 exp_base=1.0, epochs_per_layer=-1, **kwargs):
         self.model = model
         self.lr = lr
         self.hebbianlayers = model.layers
         self.head = model.head
+        self.exp_base = exp_base
+        self.epochs_per_layer = epochs_per_layer
         
         if learning_rule == 'softhebb':
             self.learning_rule = self.softhebb
@@ -39,8 +42,6 @@ class HebbianOptimizer:
             
         elif learning_rule == 'random':
             self.learning_rule = self.random
-            if not supervised:
-                raise Exception('random learning rule is not compatible with unsupervised learning')
         elif learning_rule == 'end2end':
             self.learning_rule = self.backprop
             if not supervised:
@@ -60,6 +61,14 @@ class HebbianOptimizer:
             self.hebbianlayers = self.hebbianlayers[:-1]
             self.args = KickbackArgs(
                 rate = lr,
+            )
+        elif learning_rule == 'hebbnet':
+            self.learning_rule = self.hebbnet
+            self.hebbianlayers = self.hebbianlayers[:-1]
+            self.args = HebbnetArgs(
+                rate = lr,
+                exp_avg=exp_avg,
+                sparsity=0.8,
             )
         else:
             raise Exception(f'learning rule: {learning_rule} not recognized')
@@ -91,8 +100,7 @@ class HebbianOptimizer:
         return self.lr
     
     def exp_schedule(self):
-        #TODO: make this more general
-        return self.lr * 0.95 ** (self.n_steps / 100)
+        return self.lr * self.exp_base ** (self.n_steps // 100)
     
     def softhebb(self, rate=0.001):
         self.args.rate = rate
@@ -124,12 +132,21 @@ class HebbianOptimizer:
         self.args.rate = rate
         with torch.no_grad():
             for i, layer in enumerate(self.hebbianlayers):
-                if self.sequentialTraining:
-                    if self.epoch == i: #train each layer sequentially for one epoch
+                if self.epochs_per_layer != -1: #train in order of depth
+                    if self.epoch >= self.epochs_per_layer * i and self.epoch < self.epochs_per_layer * (i-1):
                         layer.simplesofthebb(self.args)
                 else:
                     layer.simplesofthebb(self.args)
                 #wandb.log({f'layer_{i}_weightnorm': torch.mean(torch.norm(layer.weight.data, dim=1))}, commit=False)
+        if self.supervised:
+            self.optim.step()
+        self.clear_grad()
+        
+    def hebbnet(self, rate=0.001):
+        self.args.rate = rate
+        with torch.no_grad():
+            for i, layer in enumerate(self.hebbianlayers):
+                layer.hebbnet(self.args)
         if self.supervised:
             self.optim.step()
         self.clear_grad()
