@@ -130,11 +130,6 @@ def _hebb(x,u,y, weight, rate, adaptive, p, influence=None, dot_uw=False, batch_
 
     
     step = rate * dw
-    if rate is torch.Tensor:
-        wandb.log({'log/rate': torch.mean(rate)}, commit=False)
-    else:
-        wandb.log({'log/rate': rate}, commit=False)
-    wandb.log({'log/stepnorm': torch.mean(torch.norm(step, dim=1))}, commit=False)
     return step
 
 def _simplehebb(self:HebbianLayer, args:SimpleSofthebbArgs, x, y, influence=None):
@@ -151,7 +146,6 @@ def _simplehebb(self:HebbianLayer, args:SimpleSofthebbArgs, x, y, influence=None
         zero_thresh = 1 / y.shape[-1] 
         y = y * (y > zero_thresh)
         step = torch.matmul(y.t(), x) * args.rate
-        wandb.log({'log/step': torch.mean(torch.abs(step))}, commit=False)
         return step
     
 def sparsify(tensor, p):
