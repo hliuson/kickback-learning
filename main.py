@@ -70,16 +70,19 @@ def run(**kwargs):
         act = Triangle
     
     norm = kwargs.get('norm', None)
-    assert norm in [None, 'layer', 'batch']
-    norm = None
+    if norm is not None:
+        norm = norm.lower()
+        norm = norm.replace(' ', '')
+    assert norm in ['layer', 'batch']
+    normlayer = None
     if norm == 'layer':
-        norm = nn.LayerNorm
+        normlayer = nn.LayerNorm
         if model_type == 'cnn-1':
-            norm = nn.InstanceNorm2d
+            normlayer = nn.InstanceNorm2d
     if norm == 'batch':
-        norm = nn.BatchNorm1d
+        normlayer = nn.BatchNorm1d
         if model_type == 'cnn-1':
-            norm = nn.BatchNorm2d
+            normlayer = nn.BatchNorm2d
         
         
     init = kwargs.get('init', 'normal')
@@ -148,11 +151,11 @@ def run(**kwargs):
     
     model = None
     if model_type == 'mlp-1':
-        model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=R, dropout=dropout)
+        model = MLP1(mlp_in, mlp_out, width, depth, activation=act, normlayer=normlayer, init=init, init_radius=R, dropout=dropout)
     if model_type == 'cnn-1':
-        model = CNN1(img_dim, img_chan, width, mlp_out, depth, activation=act, normlayer=norm, init=init, init_radius=R, poollayer=pool)
+        model = CNN1(img_dim, img_chan, width, mlp_out, depth, activation=act, normlayer=normlayer, init=init, init_radius=R, poollayer=pool)
     if model_type == 'skip-mlp':
-        model = SkipMLP(mlp_in, mlp_out, width, depth, activation=act, normlayer=norm, init=init, init_radius=R)
+        model = SkipMLP(mlp_in, mlp_out, width, depth, activation=act, normlayer=normlayer, init=init, init_radius=R)
     
     if model is None:
         raise Exception('Model is None')
